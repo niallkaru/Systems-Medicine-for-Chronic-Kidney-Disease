@@ -1,0 +1,7 @@
+{
+    "editor.quickSuggestions": {
+        "other": "off"
+    },
+    "editor.suggest.showSnippets": false,
+    "editor.inlineSuggest.enabled": false
+}
