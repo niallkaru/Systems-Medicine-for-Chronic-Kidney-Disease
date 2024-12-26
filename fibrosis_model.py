@@ -12,21 +12,22 @@ class fibrosis_model:
         self.stateP = initial_state[2]
         self.stateC = initial_state[3]
 
-        self.lam1 = self.params[0]
-        self.mu1 = self.params[1]
-        self.lam2 = self.params[2]
-        self.mu2 = self.params[3]
-        self.beta1 = self.params[4]
-        self.beta2 = self.params[5]
-        self.beta3 = self.params[6]
-        self.alpha1 = self.params[7]
-        self.alpha2 = self.params[8]
-        self.gamma = self.params[8]
-        self.k1 = self.params[9]
-        self.k2 = self.params[10]
-        self.K = self.params[11]
+        self.lam1 = params[0]
+        self.mu1 = params[1]
+        self.lam2 = params[2]
+        self.mu2 = params[3]
+        self.beta1 = params[4]
+        self.beta2 = params[5]
+        self.beta3 = params[6]
+        self.alpha1 = params[7]
+        self.alpha2 = params[8]
+        self.gamma = params[9]
+        self.k1 = params[10]
+        self.k2 = params[11]
+        self.K = params[12]
 
-    def equations(self,M,F,C,P,lam1,lam2,mu1,mu2,beta1,beta2,beta3,alpha1,alpha2,gamma,k1,k2,K):
+    def equations(self,t,y,lam1,lam2,mu1,mu2,beta1,beta2,beta3,alpha1,alpha2,gamma,k1,k2,K):
+        M, F, C, P = y
         dFdt = F*(lam1*(P/(k1+P))*(1-(F/K))-mu1)
         dMdt = M*(lam2*(C/(k2+C))-mu2)
         dCdt = beta1*F - alpha1*M*(C/(k2+C))-gamma*C
@@ -34,6 +35,7 @@ class fibrosis_model:
         return np.array([dFdt,dMdt,dCdt,dPdt])
     
     def solve(self,t):
-        
-        sol = solve_ivp(self.equations,[t(0),t[-1]],np.array(self.stateM,self.stateF,self.stateP,self.stateC),t_eval)
+        initial_conditions = np.array([self.stateM, self.stateF, self.stateP, self.stateC])
 
+        sol = solve_ivp(self.equations, [t[0], t[-1]], initial_conditions, t_eval=t, args=(self.lam1, self.lam2, self.mu1, self.mu2, self.beta1, self.beta2, self.beta3, self.alpha1, self.alpha2, self.gamma, self.k1, self.k2, self.K))
+        return sol
