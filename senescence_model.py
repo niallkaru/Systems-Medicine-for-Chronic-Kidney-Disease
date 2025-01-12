@@ -16,7 +16,7 @@ class senescence_model:
 
     def senescent_model(self,t,x):
         """Minimal model for cellular senescence:
-        dx/dt = eta*x - beta*x/(x-kappa)
+        dx/dt = eta*x - beta*x/(x+kappa)
         
         Parameters: 
         :x: Number of senescent cells
@@ -25,10 +25,16 @@ class senescence_model:
         :beta: Rate of senescent cell removal
         :kappa: half-way saturation point for removal (Michaelis-Menten)
         """
-        dxdt = self.eta*x-(self.beta*x)/(x-self.kappa)
+        dxdt = self.eta*x-(self.beta*x)/(x+self.kappa)
         return dxdt
+    def threshold_event(self,t,x):
+        return x
     def solve(self,t):
         """Solve using SciPy (deterministic here, no stochastic element)"""
+        def threshold(t,x):
+            return self.threshold_event(t,x)
+        threshold.terminal = True
+        threshold.direction = 0
         #State is array-like as solve_ivp requires it to be 1-dimensional
-        sol = solve_ivp(self.senescent_model, [t[0],t[-1]],[self.state],t_eval=t)
+        sol = solve_ivp(self.senescent_model, [t[0],t[-1]],[self.state],t_eval=t,events=threshold)
         return sol

@@ -26,16 +26,21 @@ class fibrosis_model:
         self.k2 = params[11]
         self.K = params[12]
 
-    def equations(self,t,y,lam1,lam2,mu1,mu2,beta1,beta2,beta3,alpha1,alpha2,gamma,k1,k2,K):
+    def equations(self, t, y):
         M, F, C, P = y
-        dFdt = F*(lam1*(P/(k1+P))*(1-(F/K))-mu1)
-        dMdt = M*(lam2*(C/(k2+C))-mu2)
-        dCdt = beta1*F - alpha1*M*(C/(k2+C))-gamma*C
-        dPdt = beta2*M+beta3*F-alpha2*F*(P/(k1+P))-gamma*P
+        dFdt = F * (self.lam1 * (P / (self.k1 + P)) * (1 - (F / self.K)) - self.mu1)
+        dMdt = M * (self.lam2 * (C / (self.k2 + C)) - self.mu2)
+        dCdt = self.beta1 * F - self.alpha1 * M * (C / (self.k2 + C)) - self.gamma * C
+        dPdt = self.beta2 * M + self.beta3 * F - self.alpha2 * F * (P / (self.k1 + P)) - self.gamma * P
         return np.array([dFdt,dMdt,dCdt,dPdt])
-    
+    def threshold_event(self,t,y):
+        return y[0] #Stop when mF reaches zero
     def solve(self,t):
+        def threshold(t,y):
+            return self.threshold_event(t,y)
+        threshold.terminal = True
+        threshold.direction = 0
         initial_conditions = np.array([self.stateM, self.stateF, self.stateP, self.stateC])
 
-        sol = solve_ivp(self.equations, [t[0], t[-1]], initial_conditions, t_eval=t, args=(self.lam1, self.lam2, self.mu1, self.mu2, self.beta1, self.beta2, self.beta3, self.alpha1, self.alpha2, self.gamma, self.k1, self.k2, self.K))
+        sol = solve_ivp(self.equations, [t[0], t[-1]], initial_conditions, t_eval=t,events = threshold)
         return sol
