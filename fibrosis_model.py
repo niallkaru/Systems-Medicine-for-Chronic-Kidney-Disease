@@ -42,5 +42,5 @@ class fibrosis_model:
         threshold.direction = 0
         initial_conditions = np.array([self.stateM, self.stateF, self.stateP, self.stateC])
 
-        sol = solve_ivp(self.equations, [t[0], t[-1]], initial_conditions, t_eval=t,events = threshold)
+        sol = solve_ivp(self.equations, [t[0], t[-1]], initial_conditions, t_eval=t)#,events = (threshold))
         return sol
