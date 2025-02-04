@@ -26,7 +26,7 @@ def main():
     initial_state_fm = [10,10,10,10]
     #params_fm = np.random.randint(0,10,13)
     #lam1,lam2,mu1,mu2,K,k1,k2,beta1,beta2,beta3,alpha1,alpha2,gamma
-    params_fm = [0.9,0.8,0.3,0.3,470*min2day,70*min2day,240*min2day,940*min2day,510*min2day,2,1E9,1E9,1E6]
+    params_fm = [0.9,0.8,0.3,0.3,1E6,1E9,1e9,470*min2day,70*min2day,240*min2day,940*min2day,510*min2day,2]
     cell_fm = fm.fibrosis_model(params_fm,initial_state_fm)
     """     sol_fm = cell_fm.solve(t)
     print(sol_fm)

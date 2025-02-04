@@ -66,12 +66,12 @@ class fibrosis_model:
         return np.array(nullclines)
     def nullclines_M(self,M):
         C = (self.mu2*self.k2)/(self.lam2-self.mu2)
-        F = ((self.alpha1*M*C)/((self.k2+C))/self.beta1)-(self.gamma*C/self.beta1)
-        return np.array([F,M])
+        F = (1/self.beta1)*((self.alpha1*M*C)/(self.k2+C))+((self.gamma*C)/self.beta1)
+        return [F,M]
     def nullclines_F(self,F):
         P = (self.mu1*self.k1*self.K)/(self.lam1*self.K-F*self.lam1-self.mu1*self.K)
-        M = -1*(self.beta3*F-self.alpha2*F*P/(self.k1*P)-self.gamma*P)/self.beta2
-        return np.array([F,M])
+        M = -1*(self.beta3*F-self.alpha2*F*P/(self.k1+P)-self.gamma*P)/self.beta2
+        return [F,M]
     def subtract_nulls(self,X0):
         """ Returns the one nullcline subtracted from the other accurately"""
         M0, F0 = X0
