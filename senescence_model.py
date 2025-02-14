@@ -48,7 +48,7 @@ class senescence_model:
         return dxdt
     def euler_maruyama(self):
         x = self.state
-        t_max = 10000
+        t_max = 1000
         delta_t = t_max/100
         t=0
         times = [t]
