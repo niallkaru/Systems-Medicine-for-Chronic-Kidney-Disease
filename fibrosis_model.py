@@ -148,13 +148,13 @@ class fibrosis_model:
     def subtract_nulls(self,X0):
         """ Returns the one nullcline subtracted from the other accurately"""
         M0, F0 = X0
-        return np.array([np.subtract(self.nullclines_M(M0)[0],self.nullclines_F(F0)[0]), np.subtract(self.nullclines_M(M0)[1],self.nullclines_F(F0)[1])])
+        return [np.subtract(self.nullclines_M(M0)[0],self.nullclines_F(F0)[0]), np.subtract(self.nullclines_M(M0)[1],self.nullclines_F(F0)[1])]
     
     def fixed_points(self,initial_guess = np.array([1e4,1e4])):
         ## Optimise to get fixed points, not very accurate as it stands
         x = opt.fsolve(self.subtract_nulls, initial_guess)
-        return x
-    def change_in_m_f_to_int(self,y, t = 0):
+        return np.array(x)
+    def change_in_m_f_to_int(self,t,y):
         """ Return the growth rate of M and F assuming steady state of P and C. This is the same as
         the other change_in_m_f but returns arrays, better for using with a numerical integrator"""
     
@@ -168,6 +168,21 @@ class fibrosis_model:
         dMdt = M * (self.lam2 * (C / (self.k2 + C)) - self.mu2)
         dFdt = F * (self.lam1 * (P / (self.k1 + P)) * (1 - (F / self.K)) - self.mu1)    
         return np.array([dMdt, dFdt])
+    
+    def change_in_m_f_to_int_neg(self,t,y):
+        """ Return the growth rate of M and F assuming steady state of P and C. This is the same as
+        the other change_in_m_f but returns arrays, better for using with a numerical integrator"""
+    
+        M = y[0]
+        F = y[1]
+        CF_steady = self.steady_state_CP(M,F)
+        #print(f'CF_steady {CF_steady}')
+        C = CF_steady[0][0]
+        P = CF_steady[1][0]
+        #print(C,P)
+        dMdt = M * (self.lam2 * (C / (self.k2 + C)) - self.mu2)
+        dFdt = F * (self.lam1 * (P / (self.k1 + P)) * (1 - (F / self.K)) - self.mu1)    
+        return np.array([-1*dMdt, -1*dFdt])
     
     def change_in_m_f(self,M,F, t = 0):
         """ Return the growth rate of M and F assuming steady state of P and C"""
@@ -235,7 +250,7 @@ class fibrosis_model:
         #print(M_dot, F_dot)
         return np.array([M_dot, F_dot])
     
-    def separatrix(self,X):
+    def separatrix_eigen(self,X):
 
         M = X[0]
         F = X[1]
@@ -248,12 +263,28 @@ class fibrosis_model:
         dMdF = 0
         dFdM = 0
         dFdF = (self.lam1*P)/(self.k1+P)-(2*F*self.lam1*P)/(self.K*(self.k1+P))-self.mu1
-        jacobean = np.zeros((2,2))
-        jacobean[0,0] = dMdM
-        jacobean[0,1] = dMdF
-        jacobean[1,1] = dFdF
-        jacobean[1,0] = dFdM
-        eigenvals,eigenvecs = np.linalg.eig(jacobean)
-        return eigenvals, eigenvecs        
+        jacobian = np.zeros((2,2))
+        jacobian[0,0] = dMdM
+        jacobian[0,1] = dMdF
+        jacobian[1,1] = dFdF
+        jacobian[1,0] = dFdM
+        eigenvals,eigenvecs = np.linalg.eig(jacobian)
+        #print(eigenvals,eigenvecs)
+        unstable_index = np.argmax(eigenvals.real)
+        #Index of largest (real) eigenvalue, a positive eigenval
+        #corresponds to an unstable fixed point (along separatrix)
+        unstable_vector = eigenvecs[:,unstable_index]
 
+        return eigenvals[unstable_index],unstable_vector/np.linalg.norm(unstable_vector) #Normalise it      
+
+    def separatrix_traj(self,t,X,epsilon=1):
+        """
+        Plot Separatrix, a bit sketchy at the moment
+        """
+        eigenval,unstable_vector = self.separatrix_eigen(X)
+
+        initial = X+epsilon*unstable_vector #Perturb a little
+        print(initial)
+        sep_traj = solve_ivp(self.change_in_m_f_to_int, (t[0], t[-1]), initial, t_eval=t)
+        return [sep_traj.y[0],sep_traj.y[1]]
         
