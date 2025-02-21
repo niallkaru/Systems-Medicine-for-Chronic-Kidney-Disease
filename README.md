@@ -3,8 +3,7 @@
 Repository for my MPhys projecting focussing upon the modelling of fibrosis and cellular senescence within murine kidneys.
 ### Completed so far
 - Setting up GitHub
-- Basic structure for senescence and fibrosis
-### Planned
-- Check the results obtained are what is expected, if not correct code
-- Edit code for all the equations used in paper for fibrosis (currently just four are modelled)
-- Dabble in some stochastic modelling
+- Recreating senescence and fibrosis model as found in papers
+- ### Planned
+- Combine the two by adding a senescence term to the fibrosis model
+- Add in adimensionalisation
