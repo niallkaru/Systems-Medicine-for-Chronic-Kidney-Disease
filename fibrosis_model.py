@@ -69,6 +69,12 @@ class fibrosis_model:
         dCdt = self.beta1 * F - self.alpha1 * M * (C / (self.k2 + C)) - self.gamma * C
         dPdt = self.beta2 * M + self.beta3 * F - self.alpha2 * F * (P / (self.k1 + P)) - self.gamma * P
         return np.array([dFdt,dMdt,dCdt,dPdt])
+    def equations_adimen(self,t,y):
+        """
+        Adimensionalised versions of the equations above
+        """
+
+        return np.array([dFdt,dMdt,dCdt,dPdt])
 
     def steady_state_CP(self,M,F):
         """
@@ -124,7 +130,7 @@ class fibrosis_model:
     def nullclines_M(self,M):
         """
         Find nullclines for macrophages. Start with dMdt = 0, rearrange for C, sub into
-        dCdt and rearrange for F
+        dCdt and rearrange for F, return both.
         Input:
         M: Macrophage levels
         Return:
@@ -136,7 +142,7 @@ class fibrosis_model:
     def nullclines_F(self,F):
         """
         Find nullclines for myofibroblasts. Start with dFdt = 0, rearrange for P, sub into dPdt, 
-        rearrange for M
+        rearrange for M, again, return both.
         Input:
         F: Macrophage levels
         Return:
@@ -146,12 +152,17 @@ class fibrosis_model:
         M = -1*(self.beta3*F-self.alpha2*F*P/(self.k1+P)-self.gamma*P)/self.beta2
         return [F,M]
     def subtract_nulls(self,X0):
-        """ Returns the one nullcline subtracted from the other accurately"""
+        """ Returns the one nullcline subtracted from the other accurately, this is
+        used for finding fixed points"""
         M0, F0 = X0
         return [np.subtract(self.nullclines_M(M0)[0],self.nullclines_F(F0)[0]), np.subtract(self.nullclines_M(M0)[1],self.nullclines_F(F0)[1])]
     
     def fixed_points(self,initial_guess = np.array([1e4,1e4])):
-        ## Optimise to get fixed points, not very accurate as it stands
+        """
+        We want fixed points, where the nullclines cross ie. Fdot = Mdot
+        So using scipy.optimize (sic, American spelling)
+        and a function to find the difference between them
+        """
         x = opt.fsolve(self.subtract_nulls, initial_guess)
         return np.array(x)
     def change_in_m_f_to_int(self,t,y):
@@ -185,7 +196,8 @@ class fibrosis_model:
         return np.array([-1*dMdt, -1*dFdt])
     
     def change_in_m_f(self,M,F, t = 0):
-        """ Return the growth rate of M and F assuming steady state of P and C"""
+        """ Return the growth rate of M and F assuming steady state of P and C, essentially
+        same equations as the equations function, but with steady C and P"""
     
         CF_steady = self.steady_state_CP(M,F)
         C = CF_steady[0][0]
@@ -194,8 +206,10 @@ class fibrosis_model:
         dFdt = F * (self.lam1 * (P / (self.k1 + P)) * (1 - (F / self.K)) - self.mu1)    
         return dMdt, dFdt
     def threshold_event(self,t,y):
-        return y[0] #Stop when mF reaches zero
+        """Function to stop integrator when it hits zero"""
+        return min(y[0]-1,y[1]-1) #Stop when mF reaches zero
     def solve(self,t):
+        """Solve functions (no steady state) using solve_ivp"""
         def threshold(t,y):
             return self.threshold_event(t,y)
         threshold.terminal = True
@@ -223,7 +237,8 @@ class fibrosis_model:
 
     def constant_injury(self,t, X, pulses):
         """ Simulate the equations but with an injury added to the macrophage term and quasi-steady state
-        approximation for dCdt and dPdt.
+        approximation for dCdt and dPdt. We use solve_ivp to do this and assume a
+        A steady state for C and P
         
         Input:
         t: time
@@ -251,6 +266,13 @@ class fibrosis_model:
         return np.array([M_dot, F_dot])
     
     def separatrix_eigen(self,X):
+        """
+        We find the eigenvalues/vectors of the fixed points to determine
+        if they are stable/unstable (negative or positive). Use later.
+
+        Input: X, coordinates of steady state in M-F space
+        Return: Eigenvalues and normalised eigenvector of steady state
+        """
 
         M = X[0]
         F = X[1]
@@ -277,14 +299,29 @@ class fibrosis_model:
 
         return eigenvals[unstable_index],unstable_vector/np.linalg.norm(unstable_vector) #Normalise it      
 
-    def separatrix_traj(self,t,X,epsilon=1):
-        """
-        Plot Separatrix, a bit sketchy at the moment
-        """
-        eigenval,unstable_vector = self.separatrix_eigen(X)
+    
+    def separatrix_traj_neg(self,t,X,epsilon=1):
+            """
+            Plot Separatrix, we need to use negative changes to go *against* the normal direction
+            (see quiver plot to understand better).
+            The idea is to take in the eigenvector of the unstable point, multiply it by
+            a small value and add it to the fixed point as a perturbation, then plot to get
+            the separatrix
+            Input: t, range of times to integrate over
+            X, fixed point location
+            epsilon, value to perturb by
 
-        initial = X+epsilon*unstable_vector #Perturb a little
-        print(initial)
-        sep_traj = solve_ivp(self.change_in_m_f_to_int, (t[0], t[-1]), initial, t_eval=t)
-        return [sep_traj.y[0],sep_traj.y[1]]
-        
+            Return: list of trajectory of separatrix
+            """
+            eigenval,unstable_vector = self.separatrix_eigen(X)
+            def threshold(t,y):
+                #We don't want the number of cells to drop below one.
+                #Having half of a cell is unbiological
+                return self.threshold_event(t,y)
+            threshold.terminal = True
+            threshold.direction = -1
+            initial = X+epsilon*unstable_vector #Perturb a little
+            print(initial)
+            sep_traj = solve_ivp(self.change_in_m_f_to_int_neg, (t[0], t[-1]), initial, t_eval=t,events=threshold)
+            return [sep_traj.y[0],sep_traj.y[1]]
+            

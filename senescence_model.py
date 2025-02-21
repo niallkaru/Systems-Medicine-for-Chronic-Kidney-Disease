@@ -47,6 +47,8 @@ class senescence_model:
         dxdt = self.eta*x-(self.beta*x)/(x+self.kappa) + np.sqrt(2*self.epsilon)*zeta
         return dxdt
     def euler_maruyama(self):
+        """ Method of solving SDE
+        """
         x = self.state
         t_max = 1000
         delta_t = t_max/100

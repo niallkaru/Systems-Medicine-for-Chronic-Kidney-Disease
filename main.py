@@ -83,8 +83,8 @@ def main():
         #plt.plot(X[:, 1], X[:, 0], color=col, label='X=(%.f, %.f)' % (x_traj[1], x_traj[0]))
         # define a grid and compute direction at each point
 
-    x = np.logspace(0, 7, 20) #np.linspace(0, xmax, nb_points)
-    y = np.logspace(0, 7, 20) #np.linspace(0, ymax, nb_points)
+    x = np.logspace(0, 10, 35) #np.linspace(0, xmax, nb_points)
+    y = np.logspace(0, 10, 35) #np.linspace(0, ymax, nb_points)
 
     X1 , Y1  = np.meshgrid(x, y)                       # create a grid
 
@@ -99,25 +99,14 @@ def main():
 
 
     #-------------------------------------------------------
-    # Drow direction fields, using matplotlib 's quiver function
-    # I choose to plot normalized arrows and to use colors to give information on
-    # the growth speed
-    plt.title('Trajectories and direction fields')
-    Q = plt.quiver(X1, Y1, DX1, DY1, M, pivot='mid', cmap=plt.cm.jet)
-    plt.xlabel('F')
-    plt.ylabel('M')
-    plt.yscale('log')
-    plt.xscale('log')
-    plt.xlim(1, max(x))
-    plt.ylim(1, max(y))
-    plt.show()
 
 
 #### Perturbation ####
-    print(f'fixed x {fixed_x}\nfixed y {fixed_y}')
-    pulses = [(0,3,4e4),(6,9,4e4)]
+    #print(f'fixed x {fixed_x}\nfixed y {fixed_y}')
+    pulses = [(0,3,5e5),(6,9,1e4)]
     t = np.linspace(0, 50,  500)
-    t_sep = np.linspace(0,60,1000)
+    t_sep = np.linspace(0,75,1000)
+    t_sep_neg = np.linspace(0, 75, 1000)
     #intitial conditions, start with small amount of F or only M population changes
     X0 = np.array([0, 50])
     X = scipy.integrate.solve_ivp(cell_fm.constant_injury,(t[0],t[-1]),X0,t_eval=t,args = (pulses,))
@@ -130,13 +119,15 @@ def main():
     plt.ylabel("t")
     plt.show()
     #print(cell_fm.separatrix_eigen(fixed_y))
-    sep_traj = cell_fm.separatrix_traj(-t_sep,fixed_x,epsilon=0.1)
-    sep_traj_2 = cell_fm.separatrix_traj(t_sep,fixed_x,epsilon=1)
-
+    print("fixed x",fixed_x)
+    sep_traj = cell_fm.separatrix_traj_neg(t_sep,fixed_x,epsilon=1)
+    sep_traj_2 = cell_fm.separatrix_traj_neg(t_sep_neg,fixed_x,epsilon=-1)
+    print("fixed_x",fixed_x)
     plt.plot(X.y[1],X.y[0],label = 'Run1')
-    plt.plot(sep_traj[1],sep_traj[0],'r',label="Separatrix")
-    plt.plot(sep_traj_2[1],sep_traj_2[0],'b',label="Separatrix Neg")
-
+    plt.plot(sep_traj[1],sep_traj[0],'g',label="Separatrix")
+    plt.plot(sep_traj_2[1],sep_traj_2[0],'g')
+    plt.scatter(fixed_x[1],fixed_x[0])
+    plt.scatter(fixed_y[1],fixed_y[0])
     plt.xscale('log')
     plt.yscale('log')
     plt.legend(loc = 'best')
@@ -144,6 +135,25 @@ def main():
     plt.ylabel("M")
     plt.show()
     #print(X)
+
+    # Drow direction fields, using matplotlib 's quiver function
+    # I choose to plot normalized arrows and to use colors to give information on
+    # the growth speed
+    plt.title('Trajectories and direction fields')
+    Q = plt.quiver(X1, Y1, DX1, DY1, M, pivot='mid', cmap=plt.cm.jet)
+    plt.xlabel('F')
+    plt.ylabel('M')
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.xlim(1, max(x))
+    plt.ylim(1, max(y))
+    plt.plot(X.y[1],X.y[0],label = 'Run1')
+
+    plt.scatter(fixed_x[1],fixed_x[0],alpha=0.5)
+    plt.scatter(fixed_y[1],fixed_y[0],alpha=0.5)
+    plt.plot(sep_traj[1],sep_traj[0],'g',label="Separatrix",alpha=0.6)
+    plt.plot(sep_traj_2[1],sep_traj_2[0],'g',alpha=0.6)
+    plt.show()
 
     print("DONE")
 
