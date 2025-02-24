@@ -47,14 +47,29 @@ def main():
     ysmooth1 = [cell_fm.nullclines_F(pt)[1] for pt in xsmooth1]
     fixed_x = cell_fm.fixed_points(np.array([1e3,1e3]))
     fixed_y = cell_fm.fixed_points(np.array([5e5,3e5]))
- 
-
+    ### CHECK SPACE FOR FIXED POINTS ###
+    # x_space = np.logspace(0,10,num=100)
+    # y_space = np.logspace(0,10,num=100)
+    # fixed_points = []
+    # for x in x_space:
+    #     for y in y_space:
+    #         fixed_point = cell_fm.fixed_points(np.array([x,y]))
+    #         if np.all(fixed_point>=0):
+    #             fixed_points.append(np.round(fixed_point,decimals=2))
+    # fixed_points = np.unique(np.array(fixed_points),axis=0)
+    # print(f'Unique fixed points {fixed_points}, length {fixed_points.shape}')
     plt.figure()
     plt.plot(cell_fm.nullclines_M(mFM_space)[0], cell_fm.nullclines_M(mFM_space)[1], 'r', label = 'Macrophage nullcline')
     #plt.plot(nullcline_mF(mFM_space)[0], nullcline_mF(mFM_space)[1], 'g')
     #We have poles around 6.64*10^5 and 10^6
-    plt.scatter(fixed_x[1],fixed_x[0])
-    plt.scatter(fixed_y[1],fixed_y[0])
+    cold_fixed = cell_fm.fixed_point_cold()
+    # for array in fixed_points:
+    #     plt.scatter(array[1],array[0])
+    plt.scatter(cold_fixed[1],1, color = 'r',label='Fixed Point: End of separatrix')
+    plt.scatter(cold_fixed[0],1,color = 'purple',label='Fixed Point: Cold Fibrosis')
+    plt.scatter(fixed_x[1],fixed_x[0],color = 'r' ,label='Fixed Point')
+    plt.scatter(fixed_y[1],fixed_y[0],color = 'b', label = 'Fixed Point: Hot Fibrosis')
+    plt.scatter(1,1,color ='b', label = 'Fixed Point: Healing')
     plt.plot(cell_fm.nullclines_F(mFnull1)[0], cell_fm.nullclines_F(mFnull1)[1], 'b', label = 'Myofibroblasts nullcline')
     plt.plot(cell_fm.nullclines_F(mFnull2)[0], cell_fm.nullclines_F(mFnull2)[1], 'b')
     plt.plot(cell_fm.nullclines_F(mFnull3)[0], cell_fm.nullclines_F(mFnull3)[1], 'b')

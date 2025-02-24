@@ -74,6 +74,7 @@ class fibrosis_model:
         Adimensionalised versions of the equations above
         """
 
+
         return np.array([dFdt,dMdt,dCdt,dPdt])
 
     def steady_state_CP(self,M,F):
@@ -165,6 +166,20 @@ class fibrosis_model:
         """
         x = opt.fsolve(self.subtract_nulls, initial_guess)
         return np.array(x)
+    def fixed_point_cold(self,initial_guess=np.array([1e5,0])):
+            P_coeff = np.array([-self.gamma,
+                           (self.K / self.lam1) * (self.lam1 - self.mu1) * (self.beta3 - self.alpha2) - self.gamma * self.k1,
+                           (self.K * self.k1 / self.lam1) * (self.beta3 * self.lam1 - 2 * self.mu1 * self.beta3 + self.mu1 *self.alpha2),
+                           -self.k1**2 * self.mu1 * self.K * self.beta3 / self.lam1])
+                # rearranged from eqns in transparent methods
+            coldP= np.roots(P_coeff)
+            coldF = []
+            
+            for coldroot in coldP:
+                if np.isreal(coldroot) and coldroot >= 0:
+                    coldF.append(self.K * ((self.lam1 - self.mu1) / (self.lam1) - (self.mu1 * self.k1) / (self.lam1 * np.real(coldroot)))) # finds mF value given PDGF value
+            
+            return coldF
     def change_in_m_f_to_int(self,t,y):
         """ Return the growth rate of M and F assuming steady state of P and C. This is the same as
         the other change_in_m_f but returns arrays, better for using with a numerical integrator"""
