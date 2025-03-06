@@ -336,7 +336,6 @@ class fibrosis_model:
             threshold.terminal = True
             threshold.direction = -1
             initial = X+epsilon*unstable_vector #Perturb a little
-            print(initial)
             sep_traj = solve_ivp(self.change_in_m_f_to_int_neg, (t[0], t[-1]), initial, t_eval=t,events=threshold)
             return [sep_traj.y[0],sep_traj.y[1]]
             

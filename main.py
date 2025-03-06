@@ -3,43 +3,34 @@
 import senescence_model as sm
 import fibrosis_model as fm
 import numpy as np
+import time
 import scipy.integrate 
 import matplotlib.pyplot as plt
 import plotting as ping
 def main():
-    min2day = 24*60 # Constants for converting between times
-    day2min = 1/min2day
+    t1 = time.time()
     ## For senescence ##
-    params = [0.15/365, 0.27, 1.1,0.14]
+    params_sn = [0.15/365, 0.27, 1.1,0.14]
     initial_state = 100
     t = np.linspace(0, 10, 1000)
-    cell_sm = sm.senescence_model(params,initial_state)
+    cell_sm = sm.senescence_model(params_sn,initial_state)
     sol = cell_sm.solve(t)
     sol_stoch = cell_sm.euler_maruyama() 
-    #ping.plot_tseries(sol_stoch[0],sol_stoch[1])
+    ## For fibrosis
     initial_state_fm = [10,10,10,10]
-    #           lam1,lam2,mu1,mu2,K,k1,k2,beta1,beta2,beta3,alpha1,alpha2,gamma
+    # Constants for converting between times
+    min2day = 24*60 
+    day2min = 1/min2day
+
+    # Order for params below :lam1,lam2,mu1,mu2,K,k1,k2,beta1,beta2,beta3,alpha1,alpha2,gamma
     params_fm = [0.9,0.8,0.3,0.3,1E6,1E9,1e9,470*min2day,70*min2day,240*min2day,940*min2day,510*min2day,2]
     cell_fm = fm.fibrosis_model(params_fm,initial_state_fm)
-    sol_fm = cell_fm.solve(t)
-    #ping.plot_tseries(sol_fm.t,sol_fm.y[0])
-    M_test = 100000
-    F_test = 100000
-    #print(cell_fm.lam2,cell_fm.mu2)
-    nullcline_M = cell_fm.nullclines_M(M_test)
-    nullcline_F = cell_fm.nullclines_F(F_test)
-    #print(f"nullclines_M({M_test}) = {nullcline_M}")
-    #print(f"nullclines_F({F_test}) = {nullcline_F}")
-
 
     mFM_space = np.logspace(0, 7, 10**4)
 
     # mFnull1, mFnull2, mFnull3 are intervals that do not contain any poles
-    # smoothmF1 and smoothmF2 are intervals that contain poles
     mFnull1 = np.logspace(0, 5.7, 10**3)
-    #smoothmF1 = np.logspace(5.7, 5.85, 10**3)
     mFnull2 = np.logspace(5.85, 5.95, 10**3)
-    #smoothmF2 = np.logspace(5.95, 6.05, 10**3)
     mFnull3 = np.logspace(6.05, 7, 10**3)
 
     # straight lines to replace/ignore the sharp increase near the poles
@@ -47,34 +38,22 @@ def main():
     ysmooth1 = [cell_fm.nullclines_F(pt)[1] for pt in xsmooth1]
     fixed_x = cell_fm.fixed_points(np.array([1e3,1e3]))
     fixed_y = cell_fm.fixed_points(np.array([5e5,3e5]))
-    ### CHECK SPACE FOR FIXED POINTS ###
-    # x_space = np.logspace(0,10,num=100)
-    # y_space = np.logspace(0,10,num=100)
-    # fixed_points = []
-    # for x in x_space:
-    #     for y in y_space:
-    #         fixed_point = cell_fm.fixed_points(np.array([x,y]))
-    #         if np.all(fixed_point>=0):
-    #             fixed_points.append(np.round(fixed_point,decimals=2))
-    # fixed_points = np.unique(np.array(fixed_points),axis=0)
-    # print(f'Unique fixed points {fixed_points}, length {fixed_points.shape}')
+
     plt.figure()
     plt.plot(cell_fm.nullclines_M(mFM_space)[0], cell_fm.nullclines_M(mFM_space)[1], 'r', label = 'Macrophage nullcline')
     #plt.plot(nullcline_mF(mFM_space)[0], nullcline_mF(mFM_space)[1], 'g')
     #We have poles around 6.64*10^5 and 10^6
     cold_fixed = cell_fm.fixed_point_cold()
-    # for array in fixed_points:
-    #     plt.scatter(array[1],array[0])
+
+    plt.plot(cell_fm.nullclines_F(mFnull1)[0], cell_fm.nullclines_F(mFnull1)[1], 'b', label = 'Myofibroblasts nullcline')
+    plt.plot(cell_fm.nullclines_F(mFnull2)[0], cell_fm.nullclines_F(mFnull2)[1], 'b')
+    plt.plot(cell_fm.nullclines_F(mFnull3)[0], cell_fm.nullclines_F(mFnull3)[1], 'b')
     plt.scatter(cold_fixed[1],1, color = 'r',label='Fixed Point: End of separatrix')
     plt.scatter(cold_fixed[0],1,color = 'purple',label='Fixed Point: Cold Fibrosis')
     plt.scatter(fixed_x[1],fixed_x[0],color = 'r' ,label='Fixed Point')
     plt.scatter(fixed_y[1],fixed_y[0],color = 'b', label = 'Fixed Point: Hot Fibrosis')
     plt.scatter(1,1,color ='b', label = 'Fixed Point: Healing')
-    plt.plot(cell_fm.nullclines_F(mFnull1)[0], cell_fm.nullclines_F(mFnull1)[1], 'b', label = 'Myofibroblasts nullcline')
-    plt.plot(cell_fm.nullclines_F(mFnull2)[0], cell_fm.nullclines_F(mFnull2)[1], 'b')
-    plt.plot(cell_fm.nullclines_F(mFnull3)[0], cell_fm.nullclines_F(mFnull3)[1], 'b')
     plt.plot(xsmooth1, ysmooth1, 'b')
-
     plt.xlabel("myofibroblasts")
     plt.ylabel("macrophages")
     plt.xlim((1, 10**7))
@@ -83,6 +62,18 @@ def main():
     plt.yscale("log")
     plt.legend()
     plt.show()
+
+
+    nullclines_M = cell_fm.nullclines_M(mFM_space)
+    nullclines_F1 = cell_fm.nullclines_F(mFnull1)
+    nullclines_F2 = cell_fm.nullclines_F(mFnull2)
+    nullclines_F3 = cell_fm.nullclines_F(mFnull3)
+    nullclines_plot = [nullclines_M,nullclines_F1,nullclines_F2,nullclines_F3,[xsmooth1,ysmooth1]]
+    colours = ['orange','b','b','b','b']
+
+    plot = ping.Plotter(cell_fm)
+    #plot.plot_scatter([fixed_x,fixed_y],log=[True,True],show=False,lims=[[1,1e7],[1,1e7]])#Order matters
+    #plot.plot_series(nullclines_plot,log=[True,True],lims=[[1,1e7],[1,1e7]],colours=colours)
 
     ### Plot trajectories ###
     x_traj = np.array([1e6,1e6])
@@ -95,9 +86,8 @@ def main():
         x_traj_new = [x_traj[0], v * x_traj[1]]  # Starting point
         #print(x_traj_new)
         X = scipy.integrate.solve_ivp(cell_fm.change_in_m_f_to_int,(t[0],t[-1]), x_traj_new,t_eval=t)  # Integrate the system
-        #plt.plot(X[:, 1], X[:, 0], color=col, label='X=(%.f, %.f)' % (x_traj[1], x_traj[0]))
-        # define a grid and compute direction at each point
-
+    
+    # define a grid and compute direction at each point
     x = np.logspace(0, 10, 35) #np.linspace(0, xmax, nb_points)
     y = np.logspace(0, 10, 35) #np.linspace(0, ymax, nb_points)
 
@@ -110,10 +100,6 @@ def main():
     M[ M == 0] = 1.                                 # Avoid zero division errors 
     DX1 /= M                                        # Normalize each arrows
     DY1 /= M
-
-
-
-    #-------------------------------------------------------
 
 
 #### Perturbation ####
@@ -134,10 +120,10 @@ def main():
     plt.ylabel("t")
     plt.show()
     #print(cell_fm.separatrix_eigen(fixed_y))
-    print("fixed x",fixed_x)
+    #print("fixed x",fixed_x)
     sep_traj = cell_fm.separatrix_traj_neg(t_sep,fixed_x,epsilon=1)
     sep_traj_2 = cell_fm.separatrix_traj_neg(t_sep_neg,fixed_x,epsilon=-1)
-    print("fixed_x",fixed_x)
+    #print("fixed_x",fixed_x)
     plt.plot(X.y[1],X.y[0],label = 'Run1')
     plt.plot(sep_traj[1],sep_traj[0],'g',label="Separatrix")
     plt.plot(sep_traj_2[1],sep_traj_2[0],'g')
@@ -149,11 +135,8 @@ def main():
     plt.xlabel("F")
     plt.ylabel("M")
     plt.show()
-    #print(X)
 
-    # Drow direction fields, using matplotlib 's quiver function
-    # I choose to plot normalized arrows and to use colors to give information on
-    # the growth speed
+
     plt.title('Trajectories and direction fields')
     Q = plt.quiver(X1, Y1, DX1, DY1, M, pivot='mid', cmap=plt.cm.jet)
     plt.xlabel('F')
@@ -170,7 +153,8 @@ def main():
     plt.plot(sep_traj_2[1],sep_traj_2[0],'g',alpha=0.6)
     plt.show()
 
-    print("DONE")
+    t2=time.time()
+    print(f"DONE: Total runtime: {t2-t1}s")
 
 if __name__ == '__main__':
     main()
