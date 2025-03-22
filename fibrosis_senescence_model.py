@@ -1,11 +1,13 @@
 import numpy as np
 from scipy.integrate import solve_ivp
 import scipy.optimize as opt
-"""Niall Karunaratne 22/12/2024
-Class for fibrosis model for cells (within kidney)
+import state_parameter_maker as spm
+import matplotlib.pyplot as plt
+"""Niall Karunaratne 19/03/2025
+Class for fibrosis model with senescence for cells (within kidney)
 Adapted from Principles of Cell Circuits for Tissue Repair and Fibrosis Adler et al. 2020"""
 
-class fibrosis_model:
+class fibrosis_senescence_model:
     def __init__(self,params,initial_state):
         """"Extract several million parameters
         Inputs:
@@ -31,13 +33,17 @@ class fibrosis_model:
         alpha1: Max. endocytosis of CSF by macrophages
         alpha2: Max. endocytosis of PDGF by myofibroblats
         gamma: Growth factor degredation rate
+        n: Proliferation of macrophages from senescence cells
+        h: Proliferation of senescent cells due to aging
+        r: Removal rate of senescent cells by macrophages
+        q: Saturation/Carrying capacity for senescent cells
 
         """
         self.stateM = initial_state[0]
         self.stateF = initial_state[1]
         self.stateP = initial_state[2]
         self.stateC = initial_state[3]
-
+        self.stateS = initial_state[4]
         self.lam1 = params[0]
         self.lam2 = params[1]
         self.mu2 = params[2]
@@ -51,6 +57,10 @@ class fibrosis_model:
         self.alpha1 = params[10]
         self.alpha2 = params[11]
         self.gamma = params[12]
+        self.n = params[13]
+        self.h = params[14]
+        self.r = params[15]
+        self.q = params[16]
 
     def equations(self, t, y):
         """
@@ -63,19 +73,21 @@ class fibrosis_model:
         Outputs:
         dFdt,dMdt,dCdt,dPdt: Array of differential equations for system
         """
-        M, F, C, P = y
+        M, F, C, P, S = y
         dFdt = F * (self.lam1 * (P / (self.k1 + P)) * (1 - (F / self.K)) - self.mu1)
-        dMdt = M * (self.lam2 * (C / (self.k2 + C)) - self.mu2)
+        dMdt = self.n*S + M * (self.lam2 * (C / (self.k2 + C)) - self.mu2)
         dCdt = self.beta1 * F - self.alpha1 * M * (C / (self.k2 + C)) - self.gamma * C
         dPdt = self.beta2 * M + self.beta3 * F - self.alpha2 * F * (P / (self.k1 + P)) - self.gamma * P
-        return np.array([dFdt,dMdt,dCdt,dPdt])
+        dSdt = self.h - (self.r*S*M)/(S+self.q)
+        return np.array([dFdt,dMdt,dCdt,dPdt,dSdt])
     
-
 
     def steady_state_CP(self,M,F):
         """
         Important one. The quasi-steady state values of C and P. Found by setting dCdt and dPdt to zero and 
-        substituting into dMdt and dFdt. Yields quadratic equation, solved below
+        substituting into dMdt and dFdt. Yields quadratic equation, solved below.
+
+        C and P are independent of S so these should remain the same
         Input:
         M: Macrophage levels
         F: Myofibroblast levels
@@ -129,7 +141,9 @@ class fibrosis_model:
         Return:
         F,M: F,M values for a given value of M
         """
-        C = (self.mu2*self.k2)/(self.lam2-self.mu2)
+
+        S = (self.h*self.q)/(self.r*M-self.h)
+        C = (self.mu2*self.k2-self.n*S*self.k2/M)/(self.lam2+self.n*S/M-self.mu2)
         F = (1/self.beta1)*((self.alpha1*M*C)/(self.k2+C))+((self.gamma*C)/self.beta1)
         return [F,M]
     def nullclines_F(self,F):
@@ -144,6 +158,7 @@ class fibrosis_model:
         P = (self.mu1*self.k1*self.K)/(self.lam1*self.K-F*self.lam1-self.mu1*self.K)
         M = -1*(self.beta3*F-self.alpha2*F*P/(self.k1+P)-self.gamma*P)/self.beta2
         return [F,M]
+    
     def subtract_nulls(self,X0):
         """ Returns the one nullcline subtracted from the other accurately, this is
         used for finding fixed points"""
@@ -230,7 +245,7 @@ class fibrosis_model:
         t: time
 
         Return:
-        total: total injury (in macrophages) present
+        total: total injury (in cells) present
         """
         total = 0
         for start,stop,amp in pulses: # Go through every injury individually
@@ -238,15 +253,16 @@ class fibrosis_model:
                 total += amp
         return total
 
-    def constant_injury(self,t, X, pulses):
+    def constant_injury(self,t, X, pulses_M,pulses_S):
         """ Simulate the equations but with an injury added to the macrophage term and quasi-steady state
         approximation for dCdt and dPdt. We use solve_ivp to do this and assume a
         A steady state for C and P
         
         Input:
         t: time
-        X: starting values for M and P
-        pulses: injuries to be added
+        X: starting values for M, P and S
+        pulses_M: injuries to be added (via macrophage levels)
+        pulses_S: injuries to be added (via SnC levels)
 
         Return:
         Mdot: Number of macrophages present at a time
@@ -256,98 +272,86 @@ class fibrosis_model:
 
         M = X[0]
         F = X[1]
+        S = X[2]
 
         C1_C2_steady = self.steady_state_CP(M,F)
-        #print(f'C1_C2_steady {C1_C2_steady}')
         C = C1_C2_steady[0][0]#Funny way of grabbing them due to how I organised C1_C2_steady, just roll with it
         P = C1_C2_steady[1][0]
+        #print(f'C1_C2_steady {C1_C2_steady}')
+
         #print(M,F)
-        M_dot = M*(self.lam2*(C/(self.k2+C)) - self.mu2) + self.heavyside_pulses(pulses, t)
-        F_dot = F*(self.lam1*(P/(self.k1+P))*(1 - F/self.K) - self.mu1)
-        
+        def equations_constant_injury(t,y,pulses_M,pulses_S):    
+            M, F, S = y  
+            M_dot = self.n*S+M*(self.lam2*(C/(self.k2+C)) - self.mu2) + self.heavyside_pulses(pulses_M, t)
+            F_dot = F*(self.lam1*(P/(self.k1+P))*(1 - F/self.K) - self.mu1)
+            S_dot = self.heavyside_pulses(pulses_S, t) + self.h-(self.r*S*M)/(S+self.q)
+            return np.array([M_dot,F_dot,S_dot])
+
+        X0 = [M,F,S]
+
+        sol = solve_ivp(equations_constant_injury,(t[0],t[-1]),X0,t_eval=t,args = (pulses_M,pulses_S,),method='Radau')
+
         #print(M_dot, F_dot)
-        return np.array([M_dot, F_dot])
+        return sol
     
-    def separatrix_eigen(self,X):
-        """
-        We find the eigenvalues/vectors of the fixed points to determine
-        if they are stable/unstable (negative or positive). Use later.
 
-        Input: X, coordinates of steady state in M-F space
-        Return: Eigenvalues and normalised eigenvector of steady state
+    def snc_param_heatmap(self,t,X):
         """
+        Calculate the levels of SnCs for different values of h and q, 
+        plot the results as a heatmap.
 
+        :Inputs:
+        self: class instance
+        t: array-like, time points for simulation
+        X: array-like, initial values for M, F and S
+
+        :Returns:
+        None
+        Heatmap
+        
+        Notes:
+        We use the Radau method within solve_ivp as the ODEs are stiff, i.e.
+        do not solve quickly
+        """
         M = X[0]
         F = X[1]
+        S = X[2]
 
         C1_C2_steady = self.steady_state_CP(M,F)
-        #print(f'C1_C2_steady {C1_C2_steady}')
         C = C1_C2_steady[0][0]#Funny way of grabbing them due to how I organised C1_C2_steady, just roll with it
         P = C1_C2_steady[1][0]
-        dMdM = (self.lam2*C)/(self.k2+C) - self.mu2
-        dMdF = 0
-        dFdM = 0
-        dFdF = (self.lam1*P)/(self.k1+P)-(2*F*self.lam1*P)/(self.K*(self.k1+P))-self.mu1
-        jacobian = np.zeros((2,2))
-        jacobian[0,0] = dMdM
-        jacobian[0,1] = dMdF
-        jacobian[1,1] = dFdF
-        jacobian[1,0] = dFdM
-        eigenvals,eigenvecs = np.linalg.eig(jacobian)
-        #print(eigenvals,eigenvecs)
-        unstable_index = np.argmax(eigenvals.real)
-        #Index of largest (real) eigenvalue, a positive eigenval
-        #corresponds to an unstable fixed point (along separatrix)
-        unstable_vector = eigenvecs[:,unstable_index]
+        l = 20
+        #print(f'C1_C2_steady {C1_C2_steady}')
+        r_range = np.logspace(0,7,l)
+        n_range = np.logspace(0,7,l)
+        #print(M,F)
+        results = np.empty((l,l))
 
-        return eigenvals[unstable_index],unstable_vector/np.linalg.norm(unstable_vector) #Normalise it      
 
-    
-    def separatrix_traj_neg(self,t,X,epsilon=1):
-            """
-            Plot Separatrix, we need to use negative changes to go *against* the normal direction
-            (see quiver plot to understand better).
-            The idea is to take in the eigenvector of the unstable point, multiply it by
-            a small value and add it to the fixed point as a perturbation, then plot to get
-            the separatrix
-            Input: t, range of times to integrate over
-            X, fixed point location
-            epsilon, value to perturb by
+        for i,r in enumerate(r_range):
+            for j,n in enumerate(n_range):
+                print(f'Running for r: {r} , n: {n}')
+                def equation(t,y):    
+                    M, F, S = y
+                    M_dot = n*S+M*(self.lam2*(C/(self.k2+C)) - self.mu2)
+                    F_dot = F*(self.lam1*(P/(self.k1+P))*(1 - F/self.K) - self.mu1)
+                    S_dot = self.h-(r*S*M)/(S+self.q)
+                    return np.array([M_dot,F_dot,S_dot])
+                X0 = [M,F,S]
+                sol = solve_ivp(equation,(t[0],t[-1]),X0,t_eval=t,method='Radau')
+                #Use Radau as it seems kinda stiff
+                results[i,j] = sol.y[0,-1]
+        plt.imshow(results, cmap='plasma', extent=[n_range[0], n_range[-1], r_range[0], r_range[-1]],\
+           origin='lower')
+        plt.colorbar(label='Final Fibroblast Cell Population (F)')
+        plt.xlabel('n (Production rate of M due to S)')
+        plt.xscale('log')
+        plt.ylabel('r (Senescent Cell Removal Rate)')
+        plt.yscale('log')
+        plt.title('Senescent Cell Population Heatmap')
+        plt.show()
+        plt.savefig("figure.png")
+    #intitial conditions, start with small amount of F or only M population changes
 
-            Return: list of trajectory of separatrix
-            """
-            eigenval,unstable_vector = self.separatrix_eigen(X)
-            def threshold(t,y):
-                #We don't want the number of cells to drop below one.
-                #Having half of a cell is unbiological
-                return self.threshold_event(t,y)
-            threshold.terminal = True
-            threshold.direction = -1
-            initial = X+epsilon*unstable_vector #Perturb a little
-            sep_traj = solve_ivp(self.change_in_m_f_to_int_neg, (t[0], t[-1]), initial, t_eval=t,events=threshold)
-            return [sep_traj.y[0],sep_traj.y[1]]
-
-    def adimensionalised_funcs(self,t,y,adim):
-        """
-        We want non-dimensionalised versions of the equations to ascertain
-        what the most important parameters and variables are.
-
-        Here I am keeping it quite general and not inputting any of the factors
-        directly. That is to say, not using the factors defined above.
-        
-        This would lead to a lot of cancelling but I want more flexibility.
-        """
-        M, F, C, P = y
-        psi,phi,sigma,pi,tau = adim
-        m = M/psi
-        f = F/phi
-        c = C/sigma
-        p = P/pi
-        t = t/tau
-
-        dfdt = tau*f*(((self.lam1*pi*p)/(self.k1+pi*p))*(1-(f*phi/self.K))-self.mu1)
-        dmdt = tau*m*(self.lam2*(c*sigma)/(self.k2+c*sigma)-self.mu2)
-        dcdt = tau*(((self.beta1*phi*F)/sigma)-((self.alpha1*psi*m*c)/(self.k2+sigma*c))-self.gamma*C)
-        dpdt = tau*(((self.beta2*psi*m+self.beta3*phi*f)/pi)-((self.alpha2*phi*p)/(self.k1+pi*p))-self.gamma*p)
-        return dfdt,dmdt,dcdt,dpdt
+        #print(M_dot, F_dot)
             

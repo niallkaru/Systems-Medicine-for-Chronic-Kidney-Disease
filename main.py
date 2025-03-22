@@ -7,6 +7,8 @@ import time
 import scipy.integrate 
 import matplotlib.pyplot as plt
 import plotting as ping
+import state_parameter_maker as spm
+
 def main():
     t1 = time.time()
     ## For senescence ##
@@ -26,12 +28,12 @@ def main():
     params_fm = [0.9,0.8,0.3,0.3,1E6,1E9,1e9,470*min2day,70*min2day,240*min2day,940*min2day,510*min2day,2]
     cell_fm = fm.fibrosis_model(params_fm,initial_state_fm)
 
-    mFM_space = np.logspace(0, 7, 10**4)
+    FM_space = np.logspace(0, 7, 10**4)
 
     # mFnull1, mFnull2, mFnull3 are intervals that do not contain any poles
-    mFnull1 = np.logspace(0, 5.7, 10**3)
-    mFnull2 = np.logspace(5.85, 5.95, 10**3)
-    mFnull3 = np.logspace(6.05, 7, 10**3)
+    Fnull1 = np.logspace(0, 5.7, 10**3)
+    Fnull2 = np.logspace(5.85, 5.95, 10**3)
+    Fnull3 = np.logspace(6.05, 7, 10**3)
 
     # straight lines to replace/ignore the sharp increase near the poles
     xsmooth1 = [10**5.7, 10**5.85]
@@ -40,14 +42,14 @@ def main():
     fixed_y = cell_fm.fixed_points(np.array([5e5,3e5]))
 
     plt.figure()
-    plt.plot(cell_fm.nullclines_M(mFM_space)[0], cell_fm.nullclines_M(mFM_space)[1], 'r', label = 'Macrophage nullcline')
+    plt.plot(cell_fm.nullclines_M(FM_space)[0], cell_fm.nullclines_M(FM_space)[1], 'r', label = 'Macrophage nullcline')
     #plt.plot(nullcline_mF(mFM_space)[0], nullcline_mF(mFM_space)[1], 'g')
     #We have poles around 6.64*10^5 and 10^6
     cold_fixed = cell_fm.fixed_point_cold()
 
-    plt.plot(cell_fm.nullclines_F(mFnull1)[0], cell_fm.nullclines_F(mFnull1)[1], 'b', label = 'Myofibroblasts nullcline')
-    plt.plot(cell_fm.nullclines_F(mFnull2)[0], cell_fm.nullclines_F(mFnull2)[1], 'b')
-    plt.plot(cell_fm.nullclines_F(mFnull3)[0], cell_fm.nullclines_F(mFnull3)[1], 'b')
+    plt.plot(cell_fm.nullclines_F(Fnull1)[0], cell_fm.nullclines_F(Fnull1)[1], 'b', label = 'Myofibroblasts nullcline')
+    plt.plot(cell_fm.nullclines_F(Fnull2)[0], cell_fm.nullclines_F(Fnull2)[1], 'b')
+    plt.plot(cell_fm.nullclines_F(Fnull3)[0], cell_fm.nullclines_F(Fnull3)[1], 'b')
     plt.scatter(cold_fixed[1],1, color = 'r',label='Fixed Point: End of separatrix')
     plt.scatter(cold_fixed[0],1,color = 'purple',label='Fixed Point: Cold Fibrosis')
     plt.scatter(fixed_x[1],fixed_x[0],color = 'r' ,label='Fixed Point')
@@ -64,10 +66,10 @@ def main():
     plt.show()
 
 
-    nullclines_M = cell_fm.nullclines_M(mFM_space)
-    nullclines_F1 = cell_fm.nullclines_F(mFnull1)
-    nullclines_F2 = cell_fm.nullclines_F(mFnull2)
-    nullclines_F3 = cell_fm.nullclines_F(mFnull3)
+    nullclines_M = cell_fm.nullclines_M(FM_space)
+    nullclines_F1 = cell_fm.nullclines_F(Fnull1)
+    nullclines_F2 = cell_fm.nullclines_F(Fnull2)
+    nullclines_F3 = cell_fm.nullclines_F(Fnull3)
     nullclines_plot = [nullclines_M,nullclines_F1,nullclines_F2,nullclines_F3,[xsmooth1,ysmooth1]]
     colours = ['orange','b','b','b','b']
 
@@ -104,7 +106,7 @@ def main():
 
 #### Perturbation ####
     #print(f'fixed x {fixed_x}\nfixed y {fixed_y}')
-    pulses = [(0,3,5e5),(6,9,1e4)]
+    pulses =[(0,0,0)]# [(0,3,5e5),(6,9,1e4)]
     t = np.linspace(0, 50,  500)
     t_sep = np.linspace(0,75,1000)
     t_sep_neg = np.linspace(0, 75, 1000)
@@ -113,14 +115,13 @@ def main():
     X = scipy.integrate.solve_ivp(cell_fm.constant_injury,(t[0],t[-1]),X0,t_eval=t,args = (pulses,))
 
     #print(f'X {X}')
-    # plt.plot(X.t,X.y[1],label = 'Fibroblasts')
+    plt.plot(X.t,X.y[1],label = 'Fibroblasts')
     plt.plot(X.t,X.y[0],label = "Macrophages")
     plt.legend()
-    plt.xlabel("M")
-    plt.ylabel("t")
+    plt.xlabel("t")
+    plt.ylabel("Cell Population")
     plt.show()
-    #print(cell_fm.separatrix_eigen(fixed_y))
-    #print("fixed x",fixed_x)
+
     sep_traj = cell_fm.separatrix_traj_neg(t_sep,fixed_x,epsilon=1)
     sep_traj_2 = cell_fm.separatrix_traj_neg(t_sep_neg,fixed_x,epsilon=-1)
     #print("fixed_x",fixed_x)
