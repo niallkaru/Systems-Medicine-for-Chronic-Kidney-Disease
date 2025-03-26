@@ -151,13 +151,25 @@ class fibrosis_senescence_model:
         Find nullclines for myofibroblasts. Start with dFdt = 0, rearrange for P, sub into dPdt, 
         rearrange for M, again, return both.
         Input:
-        F: Macrophage levels
+        F: Fibroblast levels
         Return:
         F,M: F,M values for a given value of M
         """
         P = (self.mu1*self.k1*self.K)/(self.lam1*self.K-F*self.lam1-self.mu1*self.K)
         M = -1*(self.beta3*F-self.alpha2*F*P/(self.k1+P)-self.gamma*P)/self.beta2
         return [F,M]
+    def nullclines_S(self,M):
+        """
+        Find nullclines for senescent cells. Start with dSdt = 0, rearrange for S, 
+        sub in M, return both.
+        Input:
+        M: Macrophage levels
+        Return:
+        M,S: S,M values for a given value of M
+        
+        """
+        S = (self.h*self.q)/(self.r*M-self.h)
+        return [M,S]
     
     def subtract_nulls(self,X0):
         """ Returns the one nullcline subtracted from the other accurately, this is
