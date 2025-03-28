@@ -168,9 +168,10 @@ class fibrosis_senescence_model:
         M,S: S,M values for a given value of M
         
         """
-        S = (self.h*self.q)/(self.r*M-self.h)
-        return [M,S]
-    
+        M = self.h * (self.q + S) / (self.r * S)
+        return [S, M]
+      
+
     def subtract_nulls(self,X0):
         """ Returns the one nullcline subtracted from the other accurately, this is
         used for finding fixed points"""
