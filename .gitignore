@@ -6,10 +6,24 @@
 __pycache__/
 *.py[cod]
 *$py.class
+###ADDED####
+# Ignore VS Code settings
+.vscode/
+
+# Ignore any local settings files, for example:
+local_settings.py
+settings.json
+###########
 
 # C extensions
 *.so
-
+# Ignore image files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
 # Distribution / packaging
 .Python
 build/

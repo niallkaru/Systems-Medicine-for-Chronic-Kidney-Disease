@@ -150,14 +150,83 @@ class fibrosis_model:
         M0, F0 = X0
         return [np.subtract(self.nullclines_M(M0)[0],self.nullclines_F(F0)[0]), np.subtract(self.nullclines_M(M0)[1],self.nullclines_F(F0)[1])]
     
-    def fixed_points(self,initial_guess = np.array([1e4,1e4])):
+    # def fixed_points(self,initial_guess = np.array([1e4,1e4])):
+    #     """
+    #     We want fixed points, where the nullclines cross ie. Fdot = Mdot
+    #     So using scipy.optimize (sic, American spelling)
+    #     and a function to find the difference between them
+    #     """
+    #     x = opt.fsolve(self.subtract_nulls, initial_guess)
+    #     return np.array(x)
+    
+    def residual_fixed_point(self, X):
         """
-        We want fixed points, where the nullclines cross ie. Fdot = Mdot
-        So using scipy.optimize (sic, American spelling)
-        and a function to find the difference between them
+        Compute the residuals for steady-state conditions.
+        X = [M, F]
+        Uses the quasi-steady state for C and P.
+        At a fixed point, we require:
+        dM/dt = 0,  dF/dt = 0
         """
-        x = opt.fsolve(self.subtract_nulls, initial_guess)
-        return np.array(x)
+        M, F = X
+        # Obtain C and P via your steady_state_CP function.
+        CF_steady = self.steady_state_CP(M, F)
+        C = CF_steady[0][0]
+        P = CF_steady[1][0]
+        
+        # Compute each derivative
+        dMdt = M * (self.lam2 * (C / (self.k2 + C)) - self.mu2)
+        dFdt = F * (self.lam1 * (P / (self.k1 + P)) * (1 - (F / self.K)) - self.mu1)
+      
+        
+        return np.array([dMdt, dFdt])  
+
+    def fixed_points(self, initial_guess=np.array([1e4, 1e4])):
+        """
+        Find the fixed point in 3D by solving residual_fixed_point(X) = [0, 0, 0].
+        """
+        fixed_pt = opt.fsolve(self.residual_fixed_point, initial_guess)
+        fixed_pt[np.where(np.abs(fixed_pt)<1e-6)]=0
+        eigenvals,eigenvecs = self.eigen(fixed_pt)
+        print(f'Eigenvalues at fixed point {fixed_pt}: {eigenvals}, {"Stable" if np.all(eigenvals<0) else "Unstable"}')
+        return fixed_pt
+    def fixed_pt_sweep(self,xrange,yrange):
+                # Example parameters (fill in with your own limits)
+        xvals = np.logspace(xrange[0], xrange[-1], 35)  # e.g., for Myofibroblast concentration (F)
+        yvals = np.logspace(yrange[0], yrange[-1], 35)  # e.g., for Macrophage concentration (M)
+        #xvals = np.linspace(xrange[0], xrange[-1], 100)  # e.g., for Myofibroblast concentration (F)
+        #yvals = np.linspace(yrange[0], yrange[-1], 100)  # e.g., for Macrophage concentration (M)
+        # C
+        # Create the grid
+        grid_x, grid_y = np.meshgrid(xvals, yvals, indexing='ij')
+        #print(grid_x,"\n",grid_y)
+
+        # Use np.vectorize to apply your fixed_points_3D function.
+        # Note: The lambda returns a tuple (or slice of an array) containing the first two coordinates.
+        vect_fun = np.vectorize(lambda M, F: (self.fixed_points([M, F])[0], self.fixed_points([M, F])[1]))
+        #print(vect_fun) # Issue is here!
+        # This returns two arrays of shape (35, 35)
+        print("Finished lambda func")
+        sol1, sol2 = vect_fun(grid_x, grid_y)
+        # Now, combine these two arrays into an array of shape (35*35, 2)
+        combined_sols = np.stack((sol1, sol2), axis=-1).reshape(-1, 2)
+        #print(f'combined sols {combined_sols}')
+        # Use np.unique to filter duplicate coordinate pairs.
+        combined_sols = combined_sols[~np.isnan(combined_sols).any(axis=1)]
+
+        # Make sure to call np.unique along axis 0.
+        filtered_sols = np.unique(combined_sols, axis=0)
+        #print("filtered sols",filtered_sols)
+        #sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-5) for sol in filtered_sols]
+       # print(sols)
+        sols = filtered_sols
+        return sols
+    def perturb_fixed_point(self,fp, epsilon=1e-2,tol=1e-5):
+        """
+        Replace any zero entries in the fixed point fp with epsilon.
+        """
+        # If using numpy, you can use np.where:
+        fp = np.where(fp <= tol, epsilon, fp)
+        return fp
     def fixed_point_cold(self,initial_guess=np.array([1e5,0])):
             P_coeff = np.array([-self.gamma,
                            (self.K / self.lam1) * (self.lam1 - self.mu1) * (self.beta3 - self.alpha2) - self.gamma * self.k1,
@@ -252,10 +321,9 @@ class fibrosis_model:
         Mdot: Number of macrophages present at a time
         Fdot: Number of myofibroblasts present at a time
         """
-        #print("t:", t, "y:", X, "start:", start, "stop:", stop, "amp:", amp)
-
-        M = X[0]
-        F = X[1]
+        # Ensure non-negative values for M and F
+        M = max(0, X[0])
+        F = max(0, X[1])
 
         C1_C2_steady = self.steady_state_CP(M,F)
         #print(f'C1_C2_steady {C1_C2_steady}')
@@ -268,7 +336,7 @@ class fibrosis_model:
         #print(M_dot, F_dot)
         return np.array([M_dot, F_dot])
     
-    def separatrix_eigen(self,X):
+    def eigen(self,X):
         """
         We find the eigenvalues/vectors of the fixed points to determine
         if they are stable/unstable (negative or positive). Use later.
@@ -294,7 +362,17 @@ class fibrosis_model:
         jacobian[1,1] = dFdF
         jacobian[1,0] = dFdM
         eigenvals,eigenvecs = np.linalg.eig(jacobian)
+        return eigenvals,eigenvecs
+    def separatrix_eigen(self,X):
+        """
+        We find the eigenvalues/vectors of the fixed points to determine
+        if they are stable/unstable (negative or positive). Use later.
+
+        Input: X, coordinates of steady state in M-F space
+        Return: Eigenvalues and normalised eigenvector of steady state
+        """
         #print(eigenvals,eigenvecs)
+        eigenvals,eigenvecs = self.eigen(X)
         unstable_index = np.argmax(eigenvals.real)
         #Index of largest (real) eigenvalue, a positive eigenval
         #corresponds to an unstable fixed point (along separatrix)
@@ -318,13 +396,12 @@ class fibrosis_model:
             """
             eigenval,unstable_vector = self.separatrix_eigen(X)
             def threshold(t,y):
-                #We don't want the number of cells to drop below one.
-                #Having half of a cell is unbiological
-                return self.threshold_event(t,y)
+                # Allow the trajectory to reach zero but not go below.
+                return min(y[0], y[1]) - 1e-1  # Stop when either M or F reaches zero.
             threshold.terminal = True
             threshold.direction = -1
             initial = X+epsilon*unstable_vector #Perturb a little
-            sep_traj = solve_ivp(self.change_in_m_f_to_int_neg, (t[0], t[-1]), initial, t_eval=t,events=threshold)
+            sep_traj = solve_ivp(self.change_in_m_f_to_int_neg, (t[0], t[-1]), initial, t_eval=t,method='Radau')#,events=threshold)
             return [sep_traj.y[0],sep_traj.y[1]]
 
     def adimensionalised_funcs(self,t,y,adim):
@@ -350,4 +427,52 @@ class fibrosis_model:
         dcdt = tau*(((self.beta1*phi*F)/sigma)-((self.alpha1*psi*m*c)/(self.k2+sigma*c))-self.gamma*C)
         dpdt = tau*(((self.beta2*psi*m+self.beta3*phi*f)/pi)-((self.alpha2*phi*p)/(self.k1+pi*p))-self.gamma*p)
         return dfdt,dmdt,dcdt,dpdt
-            
+
+    def solve_constant_injury(self, t, X0, pulses):
+
+        def enforce_non_negative(y):
+            # Enforce non-negative values for the solver.
+            return np.maximum(y, 0)
+
+        sol = solve_ivp(self.constant_injury, [t[0], t[-1]], X0, t_eval=t, args=(pulses,))
+        sol.y = np.apply_along_axis(enforce_non_negative, 0, sol.y)
+        return sol
+    
+    def time_to_state(self,y_matrix,t_values,tol=1e-5,min_steps=3):
+        """
+        Returns the earliest time when *all* variables in y_matrix have settled,
+        i.e. their stepwise differences stay below tolerance for min_steps in a row.
+
+        Parameters:
+            y_matrix: 2D array-like (shape: [num_vars, num_timepoints])
+            t_values: 1D array of time values (same length as y_matrix[0])
+            tolerance: threshold for stepwise difference to consider settled
+            min_steps: how many consecutive steps must be below tolerance
+
+        Returns:
+            Time when all variables are settled, or None
+        """
+
+        y_matrix = np.asarray(y_matrix)
+        t_values = np.asarray(t_values)
+        num_vars, num_t = y_matrix.shape
+
+        settle_times = []
+
+        for var_idx in range(num_vars):
+            y = y_matrix[var_idx]
+            diffs = np.abs(np.diff(y))
+            final_val = np.abs(y[-1]) + 1e-8  # avoid divide-by-zero
+            tol = tol * final_val
+            for i in range(num_t - min_steps - 1):
+                window = diffs[i:i + min_steps]
+                if np.all(window < tol):
+                    settle_times.append(t_values[i])
+                    break
+            else:
+                # This variable never settled
+                return None
+
+        return max(settle_times)  # Wait until all have settled
+
+
