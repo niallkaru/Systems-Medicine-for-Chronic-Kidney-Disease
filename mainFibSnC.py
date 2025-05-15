@@ -11,16 +11,15 @@ import fibrosis_model as fm
 import fibrosis_senescence_model as fsm
 import numpy as np
 import time
-import scipy.integrate 
 import matplotlib.pyplot as plt
 import plotting as ping
 import state_parameter_maker as spm
 import pandas as pd
-from scipy.integrate import solve_ivp
 from mpl_toolkits.mplot3d import Axes3D
 from sys import exit
 import matplotlib.cm as cm
 import matplotlib as mpl
+
 mpl.rcParams['figure.dpi'] = 150
 mpl.rcParams['savefig.dpi'] = 150
 

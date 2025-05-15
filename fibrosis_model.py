@@ -7,7 +7,7 @@ Adapted from Principles of Cell Circuits for Tissue Repair and Fibrosis Adler et
 
 class fibrosis_model:
     def __init__(self,params,initial_state):
-        """"Extract several million parameters
+        """"Extract parameters
         Inputs:
         self: Instance of class
         params: List of parameters for simulation
@@ -172,7 +172,7 @@ class fibrosis_model:
         CF_steady = self.steady_state_CP(M, F)
         C = CF_steady[0][0]
         P = CF_steady[1][0]
-        
+
         # Compute each derivative
         dMdt = M * (self.lam2 * (C / (self.k2 + C)) - self.mu2)
         dFdt = F * (self.lam1 * (P / (self.k1 + P)) * (1 - (F / self.K)) - self.mu1)
@@ -189,37 +189,37 @@ class fibrosis_model:
         eigenvals,eigenvecs = self.eigen(fixed_pt)
         print(f'Eigenvalues at fixed point {fixed_pt}: {eigenvals}, {"Stable" if np.all(eigenvals<0) else "Unstable"}')
         return fixed_pt
-    def fixed_pt_sweep(self,xrange,yrange):
-                # Example parameters (fill in with your own limits)
-        xvals = np.logspace(xrange[0], xrange[-1], 35)  # e.g., for Myofibroblast concentration (F)
-        yvals = np.logspace(yrange[0], yrange[-1], 35)  # e.g., for Macrophage concentration (M)
-        #xvals = np.linspace(xrange[0], xrange[-1], 100)  # e.g., for Myofibroblast concentration (F)
-        #yvals = np.linspace(yrange[0], yrange[-1], 100)  # e.g., for Macrophage concentration (M)
-        # C
-        # Create the grid
-        grid_x, grid_y = np.meshgrid(xvals, yvals, indexing='ij')
-        #print(grid_x,"\n",grid_y)
+    # def fixed_pt_sweep(self,xrange,yrange):
+    #             # Example parameters (fill in with your own limits)
+    #     xvals = np.logspace(xrange[0], xrange[-1], 35)  # e.g., for Myofibroblast concentration (F)
+    #     yvals = np.logspace(yrange[0], yrange[-1], 35)  # e.g., for Macrophage concentration (M)
+    #     #xvals = np.linspace(xrange[0], xrange[-1], 100)  # e.g., for Myofibroblast concentration (F)
+    #     #yvals = np.linspace(yrange[0], yrange[-1], 100)  # e.g., for Macrophage concentration (M)
+    #     # C
+    #     # Create the grid
+    #     grid_x, grid_y = np.meshgrid(xvals, yvals, indexing='ij')
+    #     #print(grid_x,"\n",grid_y)
 
-        # Use np.vectorize to apply your fixed_points_3D function.
-        # Note: The lambda returns a tuple (or slice of an array) containing the first two coordinates.
-        vect_fun = np.vectorize(lambda M, F: (self.fixed_points([M, F])[0], self.fixed_points([M, F])[1]))
-        #print(vect_fun) # Issue is here!
-        # This returns two arrays of shape (35, 35)
-        print("Finished lambda func")
-        sol1, sol2 = vect_fun(grid_x, grid_y)
-        # Now, combine these two arrays into an array of shape (35*35, 2)
-        combined_sols = np.stack((sol1, sol2), axis=-1).reshape(-1, 2)
-        #print(f'combined sols {combined_sols}')
-        # Use np.unique to filter duplicate coordinate pairs.
-        combined_sols = combined_sols[~np.isnan(combined_sols).any(axis=1)]
+    #     # Use np.vectorize to apply your fixed_points_3D function.
+    #     # Note: The lambda returns a tuple (or slice of an array) containing the first two coordinates.
+    #     vect_fun = np.vectorize(lambda M, F: (self.fixed_points([M, F])[0], self.fixed_points([M, F])[1]))
+    #     #print(vect_fun) # Issue is here!
+    #     # This returns two arrays of shape (35, 35)
+    #     #print("Finished lambda func")
+    #     sol1, sol2 = vect_fun(grid_x, grid_y)
+    #     # Now, combine these two arrays into an array of shape (35*35, 2)
+    #     combined_sols = np.stack((sol1, sol2), axis=-1).reshape(-1, 2)
+    #     #print(f'combined sols {combined_sols}')
+    #     # Use np.unique to filter duplicate coordinate pairs.
+    #     combined_sols = combined_sols[~np.isnan(combined_sols).any(axis=1)]
 
-        # Make sure to call np.unique along axis 0.
-        filtered_sols = np.unique(combined_sols, axis=0)
-        #print("filtered sols",filtered_sols)
-        #sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-5) for sol in filtered_sols]
-       # print(sols)
-        sols = filtered_sols
-        return sols
+    #     # Make sure to call np.unique along axis 0.
+    #     filtered_sols = np.unique(combined_sols, axis=0)
+    #     #print("filtered sols",filtered_sols)
+    #     #sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-5) for sol in filtered_sols]
+    #    # print(sols)
+    #     sols = filtered_sols
+    #     return sols
     def perturb_fixed_point(self,fp, epsilon=1e-2,tol=1e-5):
         """
         Replace any zero entries in the fixed point fp with epsilon.
@@ -475,4 +475,224 @@ class fibrosis_model:
 
         return max(settle_times)  # Wait until all have settled
 
+    def residual_fixed_point(self, X):
+            """
+            Compute the residuals for the full 3D steady-state conditions.
+            X = [M, F]
+            Uses the quasi-steady state for C and P.
+            At a fixed point, we require:
+            dM/dt = 0,  dF/dt = 0
+            """
+            M, F = X
+            # Obtain C and P via your steady_state_CP function.
+            CF_steady = self.steady_state_CP(M, F)
+            C = CF_steady[0]#[0]
+            P = CF_steady[1]#[0]
+            
+            # Compute each derivative
+            dMdt = M * (self.lam2 * (C / (self.k2 + C)) - self.mu2)
+            dFdt = F * (self.lam1 * (P / (self.k1 + P)) * (1 - (F / self.K)) - self.mu1)
+            
+            return np.array([dMdt, dFdt])  
 
+    def fixed_points_2D(self, initial_guess=np.array([1e4, 1e4])):
+            """
+            Find the fixed point in 3D by solving residual_fixed_point(X) = [0, 0, 0].
+            """
+            res = opt.root(self.residual_fixed_point, initial_guess,method='broyden1')
+            if not res.success:
+                #print("Fixed Point failure: ",initial_guess)
+                return np.array([np.nan, np.nan])
+
+            fixed_pt = res.x
+            # fixed_pt = self.perturb_fixed_point(res.x,epsilon=1e-2,tol=1e-1)
+            return fixed_pt   
+    def jacobian_full(self, M, F):
+            """
+            Return the full 2x2 Jacobian matrix ∂(dM,dF)/∂(M,F)
+            using your analytic formulas for the partial derivatives.
+            """
+            # quasi‐steady C,P
+            # C_array, P_array = self.steady_state_CP(M, F)
+            # C = C_array[0]
+            # P = P_array[0]
+            CF_steady = self.steady_state_CP(M, F)
+            C = CF_steady[0][0]
+            P = CF_steady[1][0]
+            # fill entries
+            dMdM = (self.lam2*C)/(self.k2+C) - self.mu2
+            dMdF = 0
+            dFdM = 0
+            dFdF = (self.lam1*P)/(self.k1+P)-(2*F*self.lam1*P)/(self.K*(self.k1+P))-self.mu1
+
+
+            return np.array([
+                [dMdM,  dMdF],
+                [dFdM,  dFdF]]) 
+    def classify_by_dynamics(self, M0, F0, eps=1e-2):
+        directions = [
+            np.array([eps, 0]),
+            np.array([-eps, 0]),
+            np.array([0, eps]),
+            np.array([0, -eps]),
+            np.array([eps, eps]),
+            np.array([-eps, -eps]),
+            np.array([eps, -eps]),
+            np.array([-eps, eps])
+        ]
+        
+        stability_scores = []
+        for d in directions:
+            M, F = M0 + d[0], F0 + d[1]
+            v = self.dynamics_2D(M, F)
+            dot = -np.dot(v, d)
+            stability_scores.append(dot)
+        
+        num_positive = sum(score > 0 for score in stability_scores)
+        num_negative = sum(score < 0 for score in stability_scores)
+
+        if num_positive == len(directions):
+            verdict = "stable (attractor)"
+        elif num_negative == len(directions):
+            verdict = "unstable (repellor)"
+        else:
+            verdict = "saddle (mixed stability)"
+
+        return verdict
+
+    def classify_2D(self, M, F, method="eigen", tol_zero=1e-7, rel_tol=1e-2, eps=1e-2):
+        """
+        Classify the stability of a fixed point using either the Jacobian eigenvalues
+        or by probing dynamics in nearby directions.
+
+        Parameters:
+            M, F (float): Fixed point coordinates.
+            method (str): "eigen" or "dynamics".
+            tol_zero (float): Tolerance for near-zero eigenvalues (eigen method).
+            rel_tol (float): Relative tolerance for comparing eigenvalues (eigen method).
+            eps (float): Perturbation radius (dynamics method).
+
+        Returns:
+            dict: Contains 'eigenvalues' (if available) and 'verdict'.
+        """
+        if method == "eigen":
+            J = self.jacobian_full(M, F)
+            eigvals = np.linalg.eigvals(J)
+            real_parts = np.sort(np.real(eigvals))
+            eig1, eig2 = real_parts
+
+            if eig2 > tol_zero:
+                verdict = "unstable (repellor)"
+            elif abs(eig2) > abs(eig1) * (1 / rel_tol) and abs(eig1) < tol_zero:
+                verdict = "saddle (mixed stability)"
+            elif eig1 < -tol_zero and eig2 < -tol_zero:
+                verdict = "stable (attractor)"
+            else:
+                verdict = "saddle (mixed stability)"
+
+            return {
+                "eigenvalues": eigvals,
+                "verdict": verdict
+            }
+
+        elif method == "dynamics":
+            # Directions to probe (8-point star)
+            directions = [
+                np.array([eps, 0]),
+                np.array([-eps, 0]),
+                np.array([0, eps]),
+                np.array([0, -eps]),
+                np.array([eps, eps]),
+                np.array([-eps, -eps]),
+                np.array([eps, -eps]),
+                np.array([-eps, eps])
+            ]
+
+            scores = []
+            for d in directions:
+                Mp, Fp = M + d[0], F + d[1]
+                v = self.dynamics_2D(Mp, Fp)
+                score = -np.dot(v, d)
+                scores.append(score)
+
+            num_positive = sum(s > 0 for s in scores)
+            num_negative = sum(s < 0 for s in scores)
+
+            if num_positive == len(directions):
+                verdict = "stable (attractor)"
+            elif num_negative == len(directions):
+                verdict = "unstable (repellor)"
+            else:
+                verdict = "saddle (mixed stability)"
+
+            return {
+                "verdict": verdict
+            }
+
+        else:
+            raise ValueError("Unknown classification method: choose 'eigen' or 'dynamics'")
+
+
+    def fixed_pt_sweep(self,xrange,yrange,perturb=True,classify=False):
+                # Example parameters (fill in with your own limits)
+        xfull = np.logspace(xrange[0], xrange[-1], 35)  # e.g., for Myofibroblast concentration (F)
+        yfull = np.logspace(yrange[0], yrange[-1], 35)  # e.g., for Macrophage concentration (M)
+        #xvals = np.linspace(xrange[0], xrange[-1], 100)  # e.g., for Myofibroblast concentration (F)
+        #yvals = np.linspace(yrange[0], yrange[-1], 100)  # e.g., for Macrophage concentration (M)
+        # C
+        # Create the grid
+        xvals = xfull[::3]
+        yvals = yfull[::3]
+        grid_x, grid_y = np.meshgrid(xvals, yvals, indexing='ij')
+        #print(grid_x,"\n",grid_y)
+
+        # Use np.vectorize to apply your fixed_points_3D function.
+        # Note: The lambda returns a tuple (or slice of an array) containing the first two coordinates.
+        vect_fun = np.vectorize(lambda M, F: (self.fixed_points_2D([M, F])[0], self.fixed_points_2D([M, F])[1]))
+        #print(vect_fun) # Issue is here!
+        # This returns two arrays of shape (35, 35)
+        print("Finished lambda func")
+        sol1, sol2 = vect_fun(grid_x, grid_y)
+        # Now, combine these two arrays into an array of shape (35*35, 2)
+        combined_sols = np.stack((sol1, sol2), axis=-1).reshape(-1, 2)
+        #print(f'combined sols {combined_sols}')
+        # Use np.unique to filter duplicate coordinate pairs.
+        combined_sols = combined_sols[~np.isnan(combined_sols).any(axis=1)]
+
+        # Make sure to call np.unique along axis 0.
+        unique_sols = np.unique(np.round(combined_sols,2), axis=0)
+        filtered_sols = unique_sols[np.all(unique_sols>=0,axis=1)]
+        #print("filtered sols",filtered_sols)
+        #sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-5) for sol in filtered_sols]
+        # print(sols)
+        # print(len(combined_sols),len(filtered_sols))
+        sols = filtered_sols
+
+
+        if classify:
+            meta = {}
+            for i, sol in enumerate(filtered_sols):
+                M = sol[0]
+                F = sol[1]
+                res = self.classify_2D(M, F,method='dynamics')
+                meta[i] = res
+                print(f"{res['verdict']}")
+
+            if perturb:
+                sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-1) for sol in filtered_sols]
+
+            return sols, meta
+
+        else:
+            
+            if perturb:
+                sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-1) for sol in filtered_sols]
+            return sols
+    def dynamics_2D(self, M, F):
+        C_array, P_array = self.steady_state_CP(M, F)
+        C = C_array[0]
+        P = P_array[0]
+
+        dMdt = M * ((self.lam2 * C) / (self.k2 + C) - self.mu2)
+        dFdt = F * ((self.lam1 * P) / (self.k1 + P) * (1 - F / self.K) - self.mu1)
+        return np.array([dMdt, dFdt])

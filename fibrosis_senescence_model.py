@@ -182,6 +182,62 @@ class fibrosis_senescence_model:
         """
         M = self.h * (self.q + S) / (self.r * S)
         return [S, M]
+    def nullclines_M_fixed_S(self, M_vals, S_fixed):
+        """
+        Compute the macrophage nullcline (dM/dt = 0) for fixed S.
+        Return F values as a function of M.
+        """
+        F_vals = []
+        for M in M_vals:
+            try:
+                if M <= 0 or self.lam2 == 0:
+                    raise ValueError("Invalid M or λ₂")
+
+                term = self.mu2 - (self.n * S_fixed) / M
+                term = self.mu2 - (self.n * S_fixed) / M
+                if term <= 1e-6:
+                    term = 1e-6  # avoid poles
+
+                if term <= 0 or term >= self.lam2:
+                    raise ValueError("Invalid C expression (would be negative or undefined)")
+
+                # Compute C from rearranged dM/dt = 0
+                C = (self.k2 * term) / (self.lam2 - term)
+
+                # Now use dC/dt = 0 to compute F
+                frac = C / (self.k2 + C)
+                F = (self.alpha1 * M * frac + self.gamma * C) / self.beta1
+                F_vals.append(F)
+
+            except:
+                F_vals.append(np.nan)
+
+        return np.array(M_vals), np.array(F_vals)
+
+    def debug_nullcline_M_S(self, M_vals, S_fixed, verbose=True):
+        """
+        Diagnose breakdowns in dM/dt=0 nullcline for fixed S.
+        Returns: arrays of good and bad M values.
+        """
+        bad_indices = []
+        for i, M in enumerate(M_vals):
+            try:
+                term = self.mu2 - (self.n * S_fixed) / M
+                if term <= 0 or term >= self.lam2:
+                    bad_indices.append(i)
+                    if verbose:
+                        print(f"⚠️ Invalid term at M={M:.2e}: term = {term:.2e}")
+            except Exception as e:
+                bad_indices.append(i)
+                if verbose:
+                    print(f"❌ Exception at M={M:.2e}: {e}")
+
+        bad_Ms = M_vals[bad_indices]
+        good_Ms = np.delete(M_vals, bad_indices)
+
+        return good_Ms, bad_Ms
+
+
 
     def change_in_m_f_to_int(self,t,y):
         """ Return the growth rate of M and F assuming steady state of P and C. This is the same as
@@ -406,18 +462,21 @@ class fibrosis_senescence_model:
         dSdt = self.h - (self.r * S * M) / (S + self.q)
         
         return np.array([dMdt, dFdt, dSdt])  
-    def perturb_fixed_point(self,fp, epsilon=0.1,tol=1e-4):
+    def residual_fixed_point_slice(self, M, F, fixed_S):
+        dM, dF, _ = self.change_in_m_f(M, F, fixed_S)
+        return np.array([dM, dF])
+
+    def perturb_fixed_point(self,fp, epsilon=0.01,tol=1e-4):
         """
         Replace any zero entries in the fixed point fp with epsilon.
         """
-        # If using numpy, you can use np.where:
         fp = np.where(fp <= tol, epsilon, fp)
         return fp
     def fixed_points_3D(self, initial_guess=np.array([1e4, 1e4, 1e4])):
         """
         Find the fixed point in 3D by solving residual_fixed_point(X) = [0, 0, 0].
         """
-        res = opt.root(self.residual_fixed_point, initial_guess,method='broyden1')
+        res = opt.root(self.residual_fixed_point, initial_guess,method='hybr')
         if not res.success:
             #print("Fixed Point failure: ",initial_guess)
             return np.array([np.nan, np.nan, np.nan])
@@ -425,56 +484,167 @@ class fibrosis_senescence_model:
         fixed_pt = res.x
         # fixed_pt = self.perturb_fixed_point(res.x,epsilon=1e-2,tol=1e-1)
         return fixed_pt
-    def fixed_pt_sweep(self,xrange,yrange,z_fixed):
-                # Example parameters (fill in with your own limits)
-        xfull = np.logspace(xrange[0], xrange[-1], 35)  # e.g., for Myofibroblast concentration (F)
-        yfull = np.logspace(yrange[0], yrange[-1], 35)  # e.g., for Macrophage concentration (M)
-        #xvals = np.linspace(xrange[0], xrange[-1], 100)  # e.g., for Myofibroblast concentration (F)
-        #yvals = np.linspace(yrange[0], yrange[-1], 100)  # e.g., for Macrophage concentration (M)
-        # C
-        # Create the grid
-        xvals = xfull[::3]
-        yvals = yfull[::3]
+    def fixed_pt_sweep(self, xrange, yrange, z_fixed, mode='slice', method='eigen', perturb=True, classify=True):
+        """
+        Sweep over a 2D grid (M, F) at fixed S=z_fixed and find fixed points.
+
+        Parameters:
+            xrange, yrange (list): Log10 bounds for M and F.
+            z_fixed (float): Fixed value of S.
+            mode (str): 'slice' or 'full' — which classification strategy to use.
+            method (str): 'eigen', 'dynamics', or 'both' — how to classify each point.
+            perturb (bool): Whether to apply perturbation to clean up points.
+            classify (bool): Whether to return classifications.
+
+        Returns:
+            List of fixed points, and optionally their classification metadata.
+        """
+        xfull = np.logspace(xrange[0], xrange[-1], 35)
+        yfull = np.logspace(yrange[0], yrange[-1], 35)
+        xvals, yvals = xfull[::3], yfull[::3]
+
         grid_x, grid_y = np.meshgrid(xvals, yvals, indexing='ij')
-        #print(grid_x,"\n",grid_y)
 
-        # Use np.vectorize to apply your fixed_points_3D function.
-        # Note: The lambda returns a tuple (or slice of an array) containing the first two coordinates.
         vect_fun = np.vectorize(lambda M, F: (self.fixed_points_3D([M, F, z_fixed])[0], self.fixed_points_3D([M, F, z_fixed])[1]))
-        #print(vect_fun) # Issue is here!
-        # This returns two arrays of shape (35, 35)
-        print("Finished lambda func")
         sol1, sol2 = vect_fun(grid_x, grid_y)
-        # Now, combine these two arrays into an array of shape (35*35, 2)
         combined_sols = np.stack((sol1, sol2), axis=-1).reshape(-1, 2)
-        #print(f'combined sols {combined_sols}')
-        # Use np.unique to filter duplicate coordinate pairs.
         combined_sols = combined_sols[~np.isnan(combined_sols).any(axis=1)]
+        unique_sols = np.unique(np.round(combined_sols, 2), axis=0)
+        filtered_sols = unique_sols[np.all(unique_sols >= 0, axis=1)]
 
-        # Make sure to call np.unique along axis 0.
-        unique_sols = np.unique(np.round(combined_sols,2), axis=0)
-        filtered_sols = unique_sols[np.all(unique_sols>=0,axis=1)]
-        #print("filtered sols",filtered_sols)
-        #sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-5) for sol in filtered_sols]
-       # print(sols)
-        # print(len(combined_sols),len(filtered_sols))
         sols = filtered_sols
-        for sol in filtered_sols:
-            M = sol[0]
-            F = sol[1]
+        meta = {}
+
+        for i, sol in enumerate(filtered_sols):
+            M, F = sol
             S = z_fixed
-            res = self.classify_slice(F, M, S, fixed={'S': z_fixed})
-            print(
-            f"  slice S={z_fixed}: {res['verdict']}  "
-            f"λ_slice={np.round(res['lam_free'],4)}  "
-            f"λ⊥={np.round(res['lam_perp'],4)}"
+            print(f"Initial guess: M={M:.2e}, F={F:.2e}, S={S:.2e}")
+            fp = self.fixed_points_3D([M, F, S])
+            print("Returned:", fp)
+            print("Residual norm:", np.linalg.norm(self.dynamics_3D(*fp)))
+            if mode == 'slice':
+                res = self.classify_slice(M, F, S, fixed={'S': S}, method=method)
+            elif mode == 'full':
+                res = self.classify_full(M, F, S, method=method)
+            else:
+                raise ValueError("mode must be 'slice' or 'full'")
+
+            meta[i] = res
+            print(f"{mode.upper()} @ S={S}: {res['verdict'] if 'verdict' in res else 'no verdict'}")
+
+        if perturb:
+            sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-1) for sol in filtered_sols]
+
+        if classify:
+            return sols, meta
+        else:
+            return sols
+
+
+    def sweep_fixed_S(self, xrange, yrange, fixed_S=2000,
+                    classify=True, method="eigen", perturb=True):
+        """
+        Find fixed points for a fixed S value over a log-log grid in M-F space.
+
+        Parameters:
+            xrange   : tuple of log10(M) range (e.g. [-2, 7])
+            yrange   : tuple of log10(F) range
+            fixed_S  : fixed value of senescent cell population (S)
+            classify : whether to classify each fixed point
+            method   : classification method ('eigen', 'dynamics', 'both')
+            perturb  : whether to perturb near-zero values
+
+        Returns:
+            fixed_pts : list of unique valid fixed points (M, F, S)
+            metadata  : dict of classification results
+        """
+        xvals = np.logspace(xrange[0], xrange[1], 35)[::2]
+        yvals = np.logspace(yrange[0], yrange[1], 35)[::2]
+        grid_x, grid_y = np.meshgrid(xvals, yvals, indexing='ij')
+        grid_pts = np.stack([grid_x.ravel(), grid_y.ravel()], axis=-1)
+
+        raw_pts = []
+        metadata = {}
+
+        for i, (M0, F0) in enumerate(grid_pts):
+            res = opt.root(
+                lambda XY: self.residual_fixed_point_slice(XY[0], XY[1], fixed_S),
+                [M0, F0],
+                method='hybr'
             )
 
+            if not res.success or np.any(np.isnan(res.x)) or np.any(res.x < 0):
+                continue
 
-        sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-1)
-                for sol in filtered_sols]
+            M, F = res.x
+            raw_pts.append([M, F, fixed_S])  # include S explicitly
 
-        return sols
+        raw_pts = np.array(raw_pts)
+        rounded = np.round(raw_pts, 2)
+        unique = np.unique(rounded, axis=0)
+        fixed_pts = unique[np.all(unique >= 0, axis=1)]
+
+        for idx, pt in enumerate(fixed_pts):
+            if perturb:
+                pt = self.perturb_fixed_point(pt)
+                fixed_pts[idx] = pt
+            if classify:
+                res = self.classify_slice(*pt, fixed={"S": fixed_S}, method=method)
+                metadata[idx] = res
+
+        return fixed_pts.tolist(), metadata
+
+    def sweep_full_3D(self, xrange, yrange, zrange,
+                    classify=True, method="eigen", perturb=True):
+        """
+        Find and classify fixed points in full 3D (M,F,S) space.
+
+        Parameters:
+            xrange, yrange, zrange: log10 ranges for M, F, S
+            classify: whether to classify each fixed point
+            method: 'eigen', 'dynamics', or 'both'
+            perturb: whether to apply perturbation cleanup
+
+        Returns:
+            fixed_pts: list of [M, F, S]
+            metadata: dict with verdicts, eigenvalues, etc.
+        """
+        import numpy as np
+
+        xvals = np.logspace(xrange[0], xrange[1], 20)
+        yvals = np.logspace(yrange[0], yrange[1], 20)
+        zvals = np.logspace(zrange[0], zrange[1], 20)
+
+        raw_pts = []
+        metadata = {}
+
+        for M0 in xvals:
+            for F0 in yvals:
+                for S0 in zvals:
+                    guess = [M0, F0, S0]
+                    fp = self.fixed_points_3D(guess)
+                    if np.any(np.isnan(fp)) or np.any(fp < 0):
+                        continue
+                    raw_pts.append(fp)
+
+        # Round and filter unique positive fixed points
+        raw_pts = np.array(raw_pts)
+        rounded = np.round(raw_pts, 2)
+        unique = np.unique(rounded, axis=0)
+        fixed_pts = unique[np.all(unique >= 0, axis=1)]
+
+        for idx, pt in enumerate(fixed_pts):
+            if perturb:
+                pt = self.perturb_fixed_point(pt)
+                fixed_pts[idx] = pt
+            if classify:
+                res = self.classify_full(*pt, method=method)
+                metadata[idx] = res
+
+        return fixed_pts.tolist(), metadata
+
+
+   
     def jacobian_full(self, M, F, S):
         """
         Return the full 3×3 Jacobian matrix ∂(dM,dF,dS)/∂(M,F,S)
@@ -591,10 +761,14 @@ class fibrosis_senescence_model:
             initial_pos = X+epsilon*np.array([v2d[0], v2d[1], 0.0]) #Perturb a little
             initial_neg = X-epsilon**np.array([v2d[0], v2d[1], 0.0]) #Perturb a little, other direction
 
-            sep_traj_pos = solve_ivp(self.change_in_m_f_to_int_neg_2D, (t[0], t[-1]), initial_pos, t_eval=t,method='Radau')
-            sep_traj_neg = solve_ivp(self.change_in_m_f_to_int_neg_2D, (t[0], t[-1]), initial_neg, t_eval=t,method='Radau')
+            sep_traj_pos = solve_ivp(self.change_in_m_f_to_int_neg, (t[0], t[-1]), initial_pos, t_eval=t,method='Radau',rtol=1e-9, atol=1e-12)
+            sep_traj_neg = solve_ivp(self.change_in_m_f_to_int_neg_2D, (t[0], t[-1]), initial_neg, t_eval=t,method='Radau',rtol=1e-9, atol=1e-12)
             pos_M,pos_F,pos_S = sep_traj_pos.y[0],sep_traj_pos.y[1],sep_traj_pos.y[2]
             neg_M,neg_F,neg_S = sep_traj_neg.y[0],sep_traj_neg.y[1],sep_traj_neg.y[2]
+            # Chop if it loops back
+            pos_M = pos_M[:np.argmin(pos_M)] if np.any(np.diff(pos_M) < 0) else pos_M
+            pos_F = pos_F[:len(pos_M)]
+
             pos_traj =[pos_M,pos_F,pos_S]
             neg_traj= [neg_M,neg_F,neg_S]
             #print(f'pos_traj {pos_traj}\nneg_traj {neg_traj}')
@@ -658,18 +832,48 @@ class fibrosis_senescence_model:
         plt.ylabel(y_label)
         plt.title(f"2D Quiver Plot with S fixed = {fixed_S:g}")
         
-        # Use log scale for both axes because your grid is log-spaced.
-        plt.xscale('log')
-        plt.yscale('log')
-        plt.xlim(0.01, x_vals.max())
-        plt.ylim(0.01, y_vals.max())
+
         
         # Add a colorbar for the vector magnitude.
         cbar = plt.colorbar(Q)
         cbar.set_label("Relative Growth Rate (Normalised)")
         
-        plt.tight_layout()
-        plt.show()
+
+    # def plot_2D_quiver_field_fixed_S(self, x_vals, y_vals, fixed_S,
+    #                                 x_label="Myofibroblast Conc.",
+    #                                 y_label="Macrophage Conc."):
+    #     X, Y = np.meshgrid(x_vals, y_vals)
+        
+    #     vector_func = np.vectorize(
+    #         lambda M, F: self.change_in_m_f(M, F, fixed_S)[0:2],
+    #         otypes=[float, float]
+    #     )
+    #     dM_raw, dF_raw = vector_func(Y, X)
+
+    #     # Raw magnitude
+    #     norm = np.hypot(dF_raw, dM_raw)
+    #     norm[norm == 0] = 1.0
+
+    #     # Normalize for consistent arrow length
+    #     dF_norm = dF_raw / norm
+    #     dM_norm = dM_raw / norm
+
+    #     # Optional: use np.log10(norm + eps) for better dynamic range visualization
+    #     magnitude_color = norm  # Or np.log10(norm + 1e-9)
+
+    #     # Plot (without axis scaling or show)
+    #     Q = plt.quiver(X, Y, dF_norm, dM_norm, magnitude_color,
+    #                 pivot='mid', cmap='jet', scale=40)
+
+    #     # Axis labels
+    #     plt.xlabel(x_label)
+    #     plt.ylabel(y_label)
+    #     plt.title(f"2D Quiver Plot with S fixed = {fixed_S:g}")
+
+    #     # Add colorbar separately
+    #     cbar = plt.colorbar(Q)
+    #     cbar.set_label("Vector Magnitude")
+
 
 
 
@@ -1078,46 +1282,178 @@ class fibrosis_senescence_model:
 
         return result
 ###################
-    def classify_slice(self, M, F, S, fixed={'S':2000}, tol=1e-6):
-        var_names = ['M','F','S']
-        J_full    = self.jacobian_full(M, F, S)
+    def classify_slice(self, M, F, S, fixed={'S': 2000}, method='eigen', tol=1e-6, eps=1e-2):
+        """
+        Classify the stability of a fixed point in a 2D slice (e.g. M-F) while holding one variable fixed.
 
-        # which indices are fixed?
+        Parameters:
+            M, F, S (float): Coordinates of the fixed point.
+            fixed (dict): Variable(s) to hold fixed. E.g. {'S': 2000}
+            method (str): 'eigen', 'dynamics', or 'both'
+            tol (float): Eigenvalue threshold for stability.
+            eps (float): Step size for dynamics probing.
+
+        Returns:
+            dict: Contains verdict, and optionally eigenvalues and direction scores.
+        """
+        var_names = ['M', 'F', 'S']
+        J_full = self.jacobian_full(M, F, S)
+
+        # Identify indices
         fixed_idx = [var_names.index(k) for k in fixed.keys()]
-        free_idx  = [i for i in range(3) if i not in fixed_idx]
+        free_idx = [i for i in range(3) if i not in fixed_idx]
 
-        # extract the in‐slice block J_ff and transverse block J_perp
-        J_ff   = J_full[np.ix_(free_idx, free_idx)]
-        J_perp = J_full[np.ix_(fixed_idx, fixed_idx)]
+        if method in ['eigen', 'both']:
+            # Get submatrices
+            J_ff = J_full[np.ix_(free_idx, free_idx)]
+            J_perp = J_full[np.ix_(fixed_idx, fixed_idx)]
 
-        lam_free = np.linalg.eigvals(J_ff)
-        lam_perp = np.linalg.eigvals(J_perp) if J_perp.size>0 else np.array([])
+            lam_free = np.linalg.eigvals(J_ff)
+            lam_perp = np.linalg.eigvals(J_perp) if J_perp.size > 0 else np.array([])
 
-        stable_in_slice = np.max(np.real(lam_free)) < tol
-        stable_trans    = (np.max(np.real(lam_perp)) < tol) if lam_perp.size>0 else True
+            stable_in_slice = np.max(np.real(lam_free)) < tol
+            stable_trans = np.max(np.real(lam_perp)) < tol if lam_perp.size > 0 else True
 
-        if stable_in_slice and stable_trans:
-            verdict = "stable in slice and transverse"
-        elif stable_in_slice and not stable_trans:
-            verdict = "saddle (stable in slice, unstable transverse)"
+            if stable_in_slice and stable_trans:
+                verdict_eigen = "stable in slice and transverse"
+            elif stable_in_slice and not stable_trans:
+                verdict_eigen = "saddle (stable in slice, unstable transverse)"
+            else:
+                verdict_eigen = "saddle / unstable in slice"
+
+        if method in ['dynamics', 'both']:
+            # Probe 2D slice directions: ±x, ±y, diagonals
+            directions = []
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    if dx == dy == 0:
+                        continue
+                    directions.append(np.array([dx, dy]))
+
+            scores = []
+            for d in directions:
+                d_scaled = eps * d / np.linalg.norm(d)
+                m_, f_ = M + d_scaled[0], F + d_scaled[1]
+
+                # Keep fixed variable (e.g., S) constant
+                s_ = S
+
+                v = self.dynamics_3D(m_, f_, s_)
+                v_free = np.array([v[i] for i in free_idx])
+                score = -np.dot(v_free, d_scaled)  # stability if vector points inward
+                scores.append(score)
+
+            num_pos = sum(s > 0 for s in scores)
+            num_neg = sum(s < 0 for s in scores)
+
+            if num_pos == len(scores):
+                verdict_dyn = "stable in slice and transverse"
+            elif num_neg == len(scores):
+                verdict_dyn = "unstable in slice"
+            else:
+                verdict_dyn = "saddle / unstable in slice"
+
+        # Return
+        if method == 'eigen':
+            return {
+                "lam_free": lam_free,
+                "lam_perp": lam_perp,
+                "verdict": verdict_eigen
+            }
+        elif method == 'dynamics':
+            return {
+                "scores": scores,
+                "verdict": verdict_dyn
+            }
+        elif method == 'both':
+            return {
+                "lam_free": lam_free,
+                "lam_perp": lam_perp,
+                "verdict_eigen": verdict_eigen,
+                "scores": scores,
+                "verdict_dynamics": verdict_dyn,
+                "agree": verdict_eigen == verdict_dyn
+            }
         else:
-            verdict = "saddle / unstable in slice"
+            raise ValueError("Method must be one of: 'eigen', 'dynamics', 'both'")
 
-        return {"lam_free": lam_free, "lam_perp": lam_perp, "verdict": verdict}
+    def dynamics_3D(self, M, F, S):
+        C, P = self.steady_state_CP(M, F)[0][0], self.steady_state_CP(M, F)[1][0]
+        dMdt = M * ((self.lam2 * C) / (self.k2 + C) - self.mu2) + self.n * S
+        dFdt = F * ((self.lam1 * P) / (self.k1 + P) * (1 - F / self.K) - self.mu1)
+        dSdt = self.h - (self.r * S * M) / (S + self.q)
+        return np.array([dMdt, dFdt, dSdt])
 
-    def classify_full(self, M, F, S, tol=1e-6):
-        J = self.jacobian_full(M, F, S)
-        eigs = np.linalg.eigvals(J)
-        re = np.real(eigs)
+    def classify_full(self, M, F, S, method='eigen', tol=1e-6, eps=1e-2):
+        """
+        Classify a fixed point in the full 3D system using Jacobian eigenvalues,
+        dynamics-based direction probing, or both.
 
-        if np.all(re < -tol):
-            verdict = "stable"
-        elif np.all(re > tol):
-            verdict = "unstable"
+        Parameters:
+            M, F, S (float): Coordinates of the fixed point.
+            method (str): 'eigen', 'dynamics', or 'both'.
+            tol (float): Tolerance for eigenvalue-based stability.
+            eps (float): Radius for perturbations (dynamics method).
+
+        Returns:
+            dict: verdict, eigenvalues and/or direction scores.
+        """
+        if method in ['eigen', 'both']:
+            J = self.jacobian_full(M, F, S)
+            eigvals = np.linalg.eigvals(J)
+            real_parts = np.real(eigvals)
+
+            if np.all(real_parts < -tol):
+                verdict_eigen = "stable"
+            elif np.all(real_parts > tol):
+                verdict_eigen = "unstable"
+            else:
+                verdict_eigen = "saddle"
+
+        if method in ['dynamics', 'both']:
+            # Probe 26 directions around the fixed point
+            directions = []
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    for dz in [-1, 0, 1]:
+                        if dx == dy == dz == 0:
+                            continue
+                        directions.append(np.array([dx, dy, dz]))
+
+            scores = []
+            for d in directions:
+                d_scaled = eps * d / np.linalg.norm(d)
+                Mp, Fp, Sp = M + d_scaled[0], F + d_scaled[1], S + d_scaled[2]
+                v = self.dynamics_3D(Mp, Fp, Sp)
+                score = -np.dot(v, d_scaled)  # positive = stable in that direction
+                scores.append(score)
+
+            num_positive = sum(s > 0 for s in scores)
+            num_negative = sum(s < 0 for s in scores)
+
+            if num_positive == len(directions):
+                verdict_dynamics = "stable"
+            elif num_negative == len(directions):
+                verdict_dynamics = "unstable"
+            else:
+                verdict_dynamics = "saddle"
+
+        # Final output
+        if method == 'eigen':
+            return {"eigvals": eigvals, "verdict": verdict_eigen}
+        elif method == 'dynamics':
+            return {"scores": scores, "verdict": verdict_dynamics}
+        elif method == 'both':
+            return {
+                "eigvals": eigvals,
+                "verdict_eigen": verdict_eigen,
+                "scores": scores,
+                "verdict_dynamics": verdict_dynamics,
+                "agree": verdict_eigen == verdict_dynamics
+            }
         else:
-            verdict = "saddle"
+            raise ValueError("method must be one of: 'eigen', 'dynamics', 'both'")
 
-        return {"eigvals": eigs, "verdict": verdict}
     def eigen_slice(self, M, F, S, fixed={'S':2000}, tol=1e-6):
             var_names = ['M','F','S']
             J_full    = self.jacobian_full(M, F, S)

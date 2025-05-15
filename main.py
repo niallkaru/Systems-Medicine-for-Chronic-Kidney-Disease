@@ -92,7 +92,7 @@ def main():
     #plot.plot_scatter([fixed_x,fixed_y],log=[True,True],show=False,lims=[[1,1e7],[1,1e7]])#Order matters
     #plot.plot_series(nullclines_plot,log=[True,True],lims=[[1,1e7],[1,1e7]],colours=colours)
 
-    ### Plot trajectories ###
+##### Plot trajectories ###
     x_traj = np.array([1e6,1e6])
     t_traj = np.arange(0,50,0.1)
     vals = [0.00000001,0.0001,0.001,0.01,0.1,1,10]#Length determines no. trajectories
@@ -121,7 +121,6 @@ def main():
     Q = plt.quiver(X1, Y1, DX1, DY1, log_M, pivot='mid', cmap=plt.cm.jet)
     cbar = plt.colorbar()
     cbar.set_label('Rate of Change (Normalised)', fontsize=12)  # Add a label to the colorbar
-
 #### Perturbation ####
     pulses = [(0,5,10**4.8),(2,5,-1e4)]
     #pulses =[(10,15,10**5.4)] #10**5.4 for just past, below for healin
@@ -176,7 +175,6 @@ def main():
     plt.legend()
     plt.show()
     t2=time.time()
-    print(f"DONE: Total runtime: {t2-t1}s")
-
+    print(f"DONE: Total runtime: {t2-t1}s") 
 if __name__ == '__main__':
     main()
