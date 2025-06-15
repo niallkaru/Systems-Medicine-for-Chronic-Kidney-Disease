@@ -10,9 +10,12 @@ from concurrent.futures import ProcessPoolExecutor
 import itertools
 from skimage import measure
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+import plotly.graph_objects as go
+from scipy.optimize import differential_evolution
+from scipy.optimize import basinhopping
 
 """Niall Karunaratne 19/03/2025
-Class for fibrosis model with senescence for cells (within kidney)
+Class for fibrosis model with senescence for cells
 Adapted from Principles of Cell Circuits for Tissue Repair and Fibrosis Adler et al. 2020"""
 
 class fibrosis_senescence_model:
@@ -75,6 +78,7 @@ class fibrosis_senescence_model:
     def equations(self, t, y):
         """
         Equations (without any quasi-steady state assumptions yet) for system
+        These are not normally used as they do not include pulses of macrophages/SnCs
         Inputs:
         self: instance of class
         t: array of times
@@ -142,6 +146,7 @@ class fibrosis_senescence_model:
         if np.isreal(P_2) and P_2 >= 0:
             steady_state_P.append(P_2)
         return steady_state_C,steady_state_P
+
     def nullclines_M(self,M):
         """
         Find nullclines for macrophages. Start with dMdt = 0, rearrange for C, sub into
@@ -186,6 +191,10 @@ class fibrosis_senescence_model:
         """
         Compute the macrophage nullcline (dM/dt = 0) for fixed S.
         Return F values as a function of M.
+        Input:
+        F: Fibroblast levels
+        Return:
+        M,F: M,F values for a given value of S
         """
         F_vals = []
         for M in M_vals:
@@ -213,30 +222,6 @@ class fibrosis_senescence_model:
                 F_vals.append(np.nan)
 
         return np.array(M_vals), np.array(F_vals)
-
-    def debug_nullcline_M_S(self, M_vals, S_fixed, verbose=True):
-        """
-        Diagnose breakdowns in dM/dt=0 nullcline for fixed S.
-        Returns: arrays of good and bad M values.
-        """
-        bad_indices = []
-        for i, M in enumerate(M_vals):
-            try:
-                term = self.mu2 - (self.n * S_fixed) / M
-                if term <= 0 or term >= self.lam2:
-                    bad_indices.append(i)
-                    if verbose:
-                        print(f"⚠️ Invalid term at M={M:.2e}: term = {term:.2e}")
-            except Exception as e:
-                bad_indices.append(i)
-                if verbose:
-                    print(f"❌ Exception at M={M:.2e}: {e}")
-
-        bad_Ms = M_vals[bad_indices]
-        good_Ms = np.delete(M_vals, bad_indices)
-
-        return good_Ms, bad_Ms
-
 
 
     def change_in_m_f_to_int(self,t,y):
@@ -289,6 +274,10 @@ class fibrosis_senescence_model:
         # and we force dSdt=0 so that S never moves off its slice
         return np.array([-dMdt, -dFdt, 0.0])
     def change_in_m_f_to_int_2D(self, t, y):
+        """
+        2D “negative” RHS for (M,F) at fixed S – returns dM, dF, dS=0 so that S is frozen.
+        Similar to above, but not negative.
+        """
         M, F, S = y
         C, P = self.steady_state_CP(M, F)
         C = C[0];  P = P[0]
@@ -299,7 +288,8 @@ class fibrosis_senescence_model:
     
     def change_in_m_f(self,M,F,S,t=0):
         """ Return the growth rate of M and F assuming steady state of P and C, essentially
-        same equations as the equations function, but with steady C and P"""
+        same equations as the equations function, but with steady C and P. This version is not
+        used in the numerical integrators"""
         # M = y[0]
         # F = y[1]
         # S = y[2]
@@ -358,6 +348,9 @@ class fibrosis_senescence_model:
         return np.array([M_dot,F_dot,S_dot])
 
     def solve_constant_injury(self,t,X,pulses_M,pulses_S):
+        """
+        Using solve_ivp (from scipy), solve the above equation with optional pulses for M and S
+        """
         sol = solve_ivp(self.constant_injury,(t[0],t[-1]),X,t_eval=t,args = (pulses_M,pulses_S,),method='Radau')
         def enforce_non_negative(y):
             # Enforce non-negative values for the solver.
@@ -463,6 +456,10 @@ class fibrosis_senescence_model:
         
         return np.array([dMdt, dFdt, dSdt])  
     def residual_fixed_point_slice(self, M, F, fixed_S):
+        """
+        Find fixed points for a slice of the 3D system, that is with a fixed value of S
+        This is done using the change_in_m_f function
+        """
         dM, dF, _ = self.change_in_m_f(M, F, fixed_S)
         return np.array([dM, dF])
 
@@ -530,7 +527,7 @@ class fibrosis_senescence_model:
                 raise ValueError("mode must be 'slice' or 'full'")
 
             meta[i] = res
-            print(f"{mode.upper()} @ S={S}: {res['verdict'] if 'verdict' in res else 'no verdict'}")
+           # print(f"{mode.upper()} @ S={S}: {res['verdict'] if 'verdict' in res else 'no verdict'}")
 
         if perturb:
             sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-1) for sol in filtered_sols]
@@ -585,12 +582,13 @@ class fibrosis_senescence_model:
         fixed_pts = unique[np.all(unique >= 0, axis=1)]
 
         for idx, pt in enumerate(fixed_pts):
-            if perturb:
-                pt = self.perturb_fixed_point(pt)
-                fixed_pts[idx] = pt
             if classify:
                 res = self.classify_slice(*pt, fixed={"S": fixed_S}, method=method)
                 metadata[idx] = res
+            if perturb:
+                pt = self.perturb_fixed_point(pt)
+                fixed_pts[idx] = pt
+
 
         return fixed_pts.tolist(), metadata
 
@@ -609,7 +607,6 @@ class fibrosis_senescence_model:
             fixed_pts: list of [M, F, S]
             metadata: dict with verdicts, eigenvalues, etc.
         """
-        import numpy as np
 
         xvals = np.logspace(xrange[0], xrange[1], 20)
         yvals = np.logspace(yrange[0], yrange[1], 20)
@@ -647,7 +644,7 @@ class fibrosis_senescence_model:
    
     def jacobian_full(self, M, F, S):
         """
-        Return the full 3×3 Jacobian matrix ∂(dM,dF,dS)/∂(M,F,S)
+        Return the full 3×3 Jacobian matrix d(dM,dF,dS)/d(M,F,S)
         using your analytic formulas for the partial derivatives.
         """
         # quasi‐steady C,P
@@ -714,6 +711,7 @@ class fibrosis_senescence_model:
         eigenvals,eigenvecs = np.linalg.eig(jacobian)
         return eigenvals,eigenvecs
         #print(eigenvals,eigenvecs)
+
     def separatrix_eigen(self,M,F,S):
         eigenvals,eigenvecs = self.eigen(M,F,S)
         print(f'eigenvals {eigenvals}\neigenvecs {eigenvecs}')
@@ -723,10 +721,8 @@ class fibrosis_senescence_model:
         #corresponds to an unstable fixed point (along separatrix)
         unstable_vector = eigenvecs[:,unstable_index]
         print(f'unstable vector {unstable_vector}')
-        return eigenvals[unstable_index],unstable_vector/np.linalg.norm(unstable_vector) #Normalise it      
-    def threshold_event(self,t,y):
-        """Function to stop integrator when it hits zero"""
-        return min(y[0]-1,y[1]-1) #Stop when mF reaches zero
+        return eigenvals[unstable_index],unstable_vector/np.linalg.norm(unstable_vector) #Normalise it   
+
     
     def separatrix(self,t,X,epsilon=10):
             """
@@ -761,7 +757,7 @@ class fibrosis_senescence_model:
             initial_pos = X+epsilon*np.array([v2d[0], v2d[1], 0.0]) #Perturb a little
             initial_neg = X-epsilon**np.array([v2d[0], v2d[1], 0.0]) #Perturb a little, other direction
 
-            sep_traj_pos = solve_ivp(self.change_in_m_f_to_int_neg, (t[0], t[-1]), initial_pos, t_eval=t,method='Radau',rtol=1e-9, atol=1e-12)
+            sep_traj_pos = solve_ivp(self.change_in_m_f_to_int_neg_2D, (t[0], t[-1]), initial_pos, t_eval=t,method='Radau',rtol=1e-9, atol=1e-12)
             sep_traj_neg = solve_ivp(self.change_in_m_f_to_int_neg_2D, (t[0], t[-1]), initial_neg, t_eval=t,method='Radau',rtol=1e-9, atol=1e-12)
             pos_M,pos_F,pos_S = sep_traj_pos.y[0],sep_traj_pos.y[1],sep_traj_pos.y[2]
             neg_M,neg_F,neg_S = sep_traj_neg.y[0],sep_traj_neg.y[1],sep_traj_neg.y[2]
@@ -773,6 +769,7 @@ class fibrosis_senescence_model:
             neg_traj= [neg_M,neg_F,neg_S]
             #print(f'pos_traj {pos_traj}\nneg_traj {neg_traj}')
             return pos_traj, neg_traj
+
     def planar_rhs(self,t, y):
         M, F = y
         dM, dF, _ = self.change_in_m_f(M, F, S=2000)
@@ -827,10 +824,10 @@ class fibrosis_senescence_model:
         DY_norm = DY / norm
         log_norm = np.log10(norm + 1e-9)
         # Create the quiver plot.
-        Q = plt.quiver(X, Y, DX_norm, DY_norm, log_norm, pivot='mid', cmap=plt.cm.jet)
+        Q = plt.quiver(X, Y, DX_norm, DY_norm, log_norm, pivot='mid', cmap=plt.cm.rainbow,scale=40,headwidth=5)
         plt.xlabel(x_label)
         plt.ylabel(y_label)
-        plt.title(f"2D Quiver Plot with S fixed = {fixed_S:g}")
+        #plt.title(f"2D Quiver Plot with S fixed = {fixed_S:g}")
         
 
         
@@ -838,46 +835,6 @@ class fibrosis_senescence_model:
         cbar = plt.colorbar(Q)
         cbar.set_label("Relative Growth Rate (Normalised)")
         
-
-    # def plot_2D_quiver_field_fixed_S(self, x_vals, y_vals, fixed_S,
-    #                                 x_label="Myofibroblast Conc.",
-    #                                 y_label="Macrophage Conc."):
-    #     X, Y = np.meshgrid(x_vals, y_vals)
-        
-    #     vector_func = np.vectorize(
-    #         lambda M, F: self.change_in_m_f(M, F, fixed_S)[0:2],
-    #         otypes=[float, float]
-    #     )
-    #     dM_raw, dF_raw = vector_func(Y, X)
-
-    #     # Raw magnitude
-    #     norm = np.hypot(dF_raw, dM_raw)
-    #     norm[norm == 0] = 1.0
-
-    #     # Normalize for consistent arrow length
-    #     dF_norm = dF_raw / norm
-    #     dM_norm = dM_raw / norm
-
-    #     # Optional: use np.log10(norm + eps) for better dynamic range visualization
-    #     magnitude_color = norm  # Or np.log10(norm + 1e-9)
-
-    #     # Plot (without axis scaling or show)
-    #     Q = plt.quiver(X, Y, dF_norm, dM_norm, magnitude_color,
-    #                 pivot='mid', cmap='jet', scale=40)
-
-    #     # Axis labels
-    #     plt.xlabel(x_label)
-    #     plt.ylabel(y_label)
-    #     plt.title(f"2D Quiver Plot with S fixed = {fixed_S:g}")
-
-    #     # Add colorbar separately
-    #     cbar = plt.colorbar(Q)
-    #     cbar.set_label("Vector Magnitude")
-
-
-
-
-
 
     ####### Adimensionalised ##########
     def define_dimensionless_parameters(self, M0=1.0, S0=1.0):
@@ -1084,7 +1041,7 @@ class fibrosis_senescence_model:
 
         # --- Added weights to balance importance of each variable ---
         # Since f is often much smaller due to being scaled by K, we up-weight its loss term
-        w_m, w_f, w_s = 1.0, 1000.0, 1.0
+        w_m, w_f, w_s = 1.0, 1.0, 1.0
         #print(f"theta = {theta}")
        # print(f"m_sim shape: {m_sim.shape}, m_obs: {len(m_obs)}")
 
@@ -1200,7 +1157,18 @@ class fibrosis_senescence_model:
             minimizer_kwargs=minimizer_kwargs,
             niter=100
         )
-        
+        # from scipy.optimize import differential_evolution
+
+        # result = differential_evolution(
+        #     func=self.least_squares_loss,
+        #     bounds=bounds,
+        #     args=(param_names, data_dict, y0),
+        #     maxiter=500,       # number of generations to run
+        #     popsize=15,        # population size multiplier
+        #     tol=1e-6,          # convergence tolerance
+        #     polish=True        # refine best member with L-BFGS-B at the end
+        # )
+
         best_params = result.x
         print("Best fit parameters:")
         for name, val in zip(param_names, best_params):
@@ -1223,7 +1191,7 @@ class fibrosis_senescence_model:
         plt.xlabel('Time (τ)')
         plt.ylabel('PDGF (p)')
         plt.title('PDGF over Time')
-        plt.grid(True)
+        plt.grid(False)
         plt.tight_layout()
         plt.show()
 
@@ -1270,10 +1238,10 @@ class fibrosis_senescence_model:
         # ---- Combined legend
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+        ax1.legend(lines1 + lines2, labels1 + labels2)
 
         plt.title('Model Fit to Data')
-        plt.grid(True, which='both', linestyle='--', alpha=0.5)
+        #plt.grid(True, which='both', linestyle='--', alpha=0.5)
         plt.tight_layout()
         plt.show()
 
@@ -1281,8 +1249,88 @@ class fibrosis_senescence_model:
         self.plot_residuals(tau_data, (m_sim, f_sim, s_sim), data_dict)
 
         return result
+
+
+    def fit_dimensional(self, param_names, initial_guess, bounds, data_dict, y0):
+        """
+        Fit model parameters in dimensional form using Basinhopping
+
+        Parameters
+        ----------
+        param_names : list of str
+            Names of parameters to fit (must be attributes on self).
+        initial_guess : list of float
+            Starting values for each parameter.
+        bounds : list of (min, max)
+            Bounds for each parameter.
+        data_dict : dict
+            Contains 't', 'm', 'f', 's' arrays in dimensional units.
+        y0 : array-like [M0, F0, S0]
+            Initial conditions for macrophages, fibroblasts, senescent cells.
+        """
+        # Prepare minimizer arguments (SLSQP with bounds)
+        minimizer_kwargs = {
+            'method': 'SLSQP',
+            'bounds': bounds
+        }
+
+        # 1. Run Basinhopping
+        result = basinhopping(
+            func=lambda theta: self.least_squares_loss(theta, param_names, data_dict, y0),
+            x0=initial_guess,
+            minimizer_kwargs=minimizer_kwargs,
+            niter=100,
+            stepsize=0.1,
+            T=1.0
+        )
+
+        # 2. Update only the fitted parameters
+        best_theta = result.x
+        for name, val in zip(param_names, best_theta):
+            setattr(self, name, val)
+
+        print("Optimization success:", result.lowest_optimization_result.success)
+        print("Best-fit parameters:")
+        for name, val in zip(param_names, best_theta):
+            print(f"  {name} = {val:.4g}")
+
+        # 3. Simulate the dimensional 3D ODE (M,F,S) using QSSA for C & P
+        t = np.array(data_dict['t'])
+        def dyn(t, y):
+            M, F, S = y
+            dM, dF, dS = self.change_in_m_f(M, F, S)
+            return [dM, dF, dS]
+
+        sol = solve_ivp(
+            fun=dyn,
+            t_span=(t[0], t[-1]),
+            y0=y0,
+            t_eval=t,
+            method='Radau'
+        )
+        M_sim, F_sim, S_sim = sol.y
+
+        # 4. Plot data vs. model
+        plt.figure(figsize=(10, 6))
+        plt.plot(t, data_dict['m'], 'o', label='M data')
+        plt.plot(t, M_sim, '-', label='M model')
+        plt.plot(t, data_dict['f'], 's', label='F data')
+        plt.plot(t, F_sim, '--', label='F model')
+        plt.plot(t, data_dict['s'], 'd', label='S data')
+        plt.plot(t, S_sim, '-.', label='S model')
+        plt.xlabel('Time')
+        plt.ylabel('Cell count')
+        plt.legend()
+        plt.title('Dimensional Fit (Basinhopping)')
+        plt.show()
+
+        return result
+
+
+
+
 ###################
-    def classify_slice(self, M, F, S, fixed={'S': 2000}, method='eigen', tol=1e-6, eps=1e-2):
+    def classify_slice(self, M, F, S, fixed={'S': 2000}, method='eigen', tol=1e-7, eps=1e-2):
         """
         Classify the stability of a fixed point in a 2D slice (e.g. M-F) while holding one variable fixed.
 
@@ -1313,7 +1361,7 @@ class fibrosis_senescence_model:
 
             stable_in_slice = np.max(np.real(lam_free)) < tol
             stable_trans = np.max(np.real(lam_perp)) < tol if lam_perp.size > 0 else True
-
+            #print(f'')
             if stable_in_slice and stable_trans:
                 verdict_eigen = "stable in slice and transverse"
             elif stable_in_slice and not stable_trans:
@@ -1471,6 +1519,479 @@ class fibrosis_senescence_model:
 
             return eigplane,eigperp
     
+    def fixed_curve_3D_old(self, F_range=(1e-2, 10**8), num_points=400, fig=None, plot=True,show=False):
+        """
+        Compute and optionally plot the fixed curve (intersection of dM/dt=0 and dF/dt=0),
+        skipping the pole region between 1e4 and 2.8e4 in F and avoiding visual bridging.
+        If a Plotly figure is passed in via `fig`, add the trace to it.
+        """
+
+        # Create F in two segments (below and above the pole)
+        F_segments = [
+            np.logspace(np.log10(F_range[0]), np.log10(1.5e4), num_points // 2),
+            np.logspace(np.log10(2.2e4), np.log10(F_range[1]), num_points // 2)
+        ]
+
+        if fig is None and plot:
+            fig = go.Figure()
+        first = True
+        for F_vals in F_segments:
+            M_vals, S_vals = [], []
+            for F in F_vals:
+                try:
+                    M = self.nullclines_F(F)[1]
+                    S = (self.h * self.q) / (self.r * M - self.h)
+                    if np.isreal(S) and np.isreal(M) and M > 0 and S > 0:
+                        M_vals.append(M)
+                        S_vals.append(S)
+                    else:
+                        M_vals.append(np.nan)
+                        S_vals.append(np.nan)
+                except:
+                    M_vals.append(np.nan)
+                    S_vals.append(np.nan)
+
+            # Remove NaNs from each segment
+            M_vals = np.array(M_vals)
+            S_vals = np.array(S_vals)
+            F_valid = np.array(F_vals)
+            valid = ~np.isnan(M_vals) & ~np.isnan(S_vals)
+            M_vals = M_vals[valid]
+            S_vals = S_vals[valid]
+            F_valid = F_valid[valid]
+
+            if plot:
+                fig.add_trace(go.Scatter3d(
+                    x=np.log10(M_vals), y=np.log10(F_valid), z=np.log10(S_vals),
+                    mode='lines',
+                    line=dict(color='black', width=4),
+                    name='M-F Nullcline Intersection',
+                    legendgroup='fixed_curve',    # group both traces
+                    showlegend=first            # only show legend on first trace
+                ))
+                first = False
+
+        if plot:
+            fig.update_layout(
+                legend=dict(
+                    x=0.85,         # move from 1.02 to ~0.85 (85% of figure width)
+                    y=0.90,         # move slightly down from 1.0 so it doesn’t collide with the top margin
+                    xanchor="left", # interpret x=0.85 as the left edge of the legend
+                    yanchor="top",
+                ),
+                margin=dict(r=40)   # you might need a small right margin so the legend text doesn’t get cropped
+            )
+            fig.update_layout(
+                scene=dict(
+                    xaxis=dict(
+                        title=f"log(Macrophages)<br>log((cells/ml))",
+                        title_font=dict(size=9), 
+                        tickfont=dict(size=9), 
+                        range=[-2,6.0],     # force the x‐axis to start at 0
+                        zeroline=False,      # draw the black line at x=0
+                        autorange=False,         # turn off auto‐rescaling
+                        zerolinewidth=2,
+                        zerolinecolor="black"
+                        # showbackground=True,
+                        # backgroundcolor="rgba(225, 225, 225, 0.5)"
+                    ),
+                    yaxis=dict(
+                        title=f"log(Myofibroblasts)<br>log((cells/ml))",
+                        title_font=dict(size=9),
+                        tickfont=dict(size=9),
+                        range=[-2, 6.0],     # force y=0
+                        autorange=False,         # turn off auto‐rescaling
+                        zeroline=False,
+                        zerolinewidth=2,
+                        zerolinecolor="black"
+                        # showbackground=True,
+                        # backgroundcolor="rgba(225, 225, 225, 0.5)"
+                    ),
+                    zaxis=dict(
+                        title=f"log(Senescent cells)<br>log((cells/ml))",
+                        title_font=dict(size=9),
+                        tickfont=dict(size=9),
+                        range=[-2, 6.0],     # force z=0
+                        autorange=False,         # turn off auto‐rescaling
+                        zeroline=False,
+                        zerolinewidth=2,
+                        zerolinecolor="black"
+                        # showbackground=True,
+                        # backgroundcolor="rgba(225, 225, 225, 0.5)"
+                    ),
+                    aspectmode="cube"      # keeps x, y, z≙1:1:1 so the box is not distorted
+                )
+            )
+            if show:
+                fig.show()
+
+        # Return just the concatenated values
+        if fig == None:
+            return None  # You could optionally return both chunks here if needed
+        else:
+            return fig
+    def fixed_curve_3D(self, F_range=(1e-2, 10**8), num_points=400, fig=None, plot=True):
+        """
+        Compute & plot the fixed curve, coloring each segment by stability:
+        • orangered = stable
+        • plum      = semi‐stable (saddle)
+        • skyblue   = unstable
+        """
+
+        # … (same F_segments construction as before) …
+        F_segments = [
+            np.logspace(np.log10(F_range[0]), np.log10(1.5e4), num_points // 2),
+            np.logspace(np.log10(2.2e4), np.log10(F_range[1]), num_points // 2)
+        ]
+        if fig is None and plot:
+            fig = go.Figure()
+
+        # Replace this helper with your new color choices:
+        def verdict_to_color(v):
+            if   "stable"   in v: return "orangered"
+            elif "saddle"   in v: return "plum"
+            elif "unstable" in v: return "skyblue"
+            else:                 return "gray"   # fallback if something unexpected appears
+
+        for block_idx, F_vals in enumerate(F_segments):
+            M_list, S_list, F_list, V_list = [], [], [], []
+
+            for F in F_vals:
+                try:
+                    M = self.nullclines_F(F)[1]
+                    S = (self.h * self.q) / (self.r * M - self.h)
+                except:
+                    M, S = np.nan, np.nan
+
+                if np.isreal(M) and np.isreal(S) and (M > 0) and (S > 0):
+                    M_list.append(M)
+                    S_list.append(S)
+                    F_list.append(F)
+
+                    # Classify with the full‐3D Jacobian (verdict is "stable","saddle", or "unstable")
+                    cinfo = self.classify_full(M, F, S, method="dynamics")
+                    V_list.append(cinfo["verdict"])
+                else:
+                    M_list.append(np.nan)
+                    S_list.append(np.nan)
+                    F_list.append(np.nan)
+                    V_list.append("invalid")
+
+            M_arr = np.array(M_list)
+            S_arr = np.array(S_list)
+            F_arr = np.array(F_list)
+            V_arr = np.array(V_list)
+
+            good_mask = (~np.isnan(M_arr)) & (~np.isnan(S_arr)) & (V_arr != "invalid")
+            M_arr = M_arr[good_mask]
+            S_arr = S_arr[good_mask]
+            F_arr = F_arr[good_mask]
+            V_arr = V_arr[good_mask]
+
+            if not plot or (len(M_arr) == 0):
+                continue
+
+            # Break V_arr into runs of consecutive identical verdicts
+            runs = []
+            start_idx = 0
+            for i in range(1, len(V_arr)):
+                if V_arr[i] != V_arr[i - 1]:
+                    runs.append((start_idx, i - 1, V_arr[i - 1]))
+                    start_idx = i
+            runs.append((start_idx, len(V_arr) - 1, V_arr[-1]))
+
+            # Plot each run as a separate 3D line with its mapped color
+            for run_ix, run_fx, verdict in runs:
+                Mi = M_arr[run_ix : run_fx + 1]
+                Fi = F_arr[run_ix : run_fx + 1]
+                Si = S_arr[run_ix : run_fx + 1]
+                color = verdict_to_color(verdict)
+
+                fig.add_trace(
+                    go.Scatter3d(
+                        x=np.log10(Mi),
+                        y=np.log10(Fi),
+                        z=np.log10(Si),
+                        mode='lines',
+                        line=dict(color=color, width=4),
+                        name=f"Fixed Curve ({verdict})",
+                        legendgroup='fixed_curve',
+                        showlegend=(block_idx == 0 and run_ix == 0)
+                    )
+                )
+
+        if plot:
+            fig.update_layout(
+                legend=dict(
+                    x=0.85, y=0.90,
+                    xanchor="left", yanchor="top",
+                ),
+                margin=dict(r=40)
+            )
+            fig.update_layout(
+                scene=dict(
+                    xaxis=dict(
+                        title="log(Macrophages)",
+                        range=[7.0, 0],
+                        zeroline=False,
+                        zerolinewidth=2,
+                        zerolinecolor="black",
+                        autorange=False
+                    ),
+                    yaxis=dict(
+                        title="log(Myofibroblasts)",
+                        range=[0, 6.0],
+                        zeroline=False,
+                        zerolinewidth=2,
+                        zerolinecolor="black",
+                        autorange=False
+                    ),
+                    zaxis=dict(
+                        title="log(Senescent cells)",
+                        range=[0, 8.0],
+                        zeroline=False,
+                        zerolinewidth=2,
+                        zerolinecolor="black",
+                        autorange=False
+                    ),
+                    aspectmode="cube"
+                )
+            )
+            fig.show()
+
+        return fig
+
+
+    def nullclines_3D_plotly(self, start, stop, steps,return_fig=False,show=False):
+        """
+        Plot the three nullclines in 3D using Plotly:
+        - dM/dt = 0 (magenta)
+        - dF/dt = 0 (cyan), avoiding known pole region
+        - dS/dt = 0 (green)
+
+        All surfaces are log10-transformed and clipped to valid domains.
+        """
+
+        # Log-spaced grid
+        M_vals = np.logspace(start, stop, steps)
+        S_vals = np.logspace(start, stop, steps)
+
+        # Safe F values (avoid pole between 10^5.7 and 10^5.85)
+        Fnull1 = np.logspace(start, 5.7, steps // 2)
+        Fnull2 = np.logspace(5.85, stop, steps // 2)
+        F_vals = np.concatenate([Fnull1])#, Fnull2])
+
+        # Grids for each nullcline
+        M_grid1, F_grid1 = np.meshgrid(M_vals, F_vals, indexing='ij')
+        F_grid2, S_grid2 = np.meshgrid(F_vals, S_vals, indexing='ij')
+        S_grid3, F_grid3 = np.meshgrid(S_vals, F_vals, indexing='ij')
+        # dM/dt = 0 surface (S from analytic formula)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            S_null = (self.h * self.q) / (self.r * M_grid1 - self.h)
+            S_null = np.where(S_null <= 0, np.nan, S_null)
+
+        # dF/dt = 0 surface (M from nullclines_F)
+        M_null = np.full_like(F_grid2, np.nan)
+        for i in range(F_grid2.shape[0]):
+            last_valid = 1e-6  # safe fallback
+            for j in range(F_grid2.shape[1]):
+                Fval = F_grid2[i, j]
+                try:
+                    Mval = self.nullclines_F(Fval)[1]
+                    if np.isreal(Mval) and np.isfinite(Mval) and Mval > 0:
+                        M_null[i, j] = Mval
+                        last_valid = Mval
+                    else:
+                        M_null[i, j] = last_valid
+                except:
+                    M_null[i, j] = last_valid
+
+        # dS/dt = 0 surface (M from analytic formula)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            M_snull = (self.h * (self.q + S_grid3)) / (self.r * S_grid3)
+            M_snull = np.clip(M_snull, 1e-6, 1e7)
+            M_snull[S_grid3 < 1e-3] = np.nan
+
+        # Clip values for log10
+        def safe_log(arr, min_val=1e-6):
+            arr = np.where(arr <= 0, min_val, arr)
+            return np.log10(arr)
+
+        # Create surface traces
+        surfaces = [
+            go.Surface(
+                x=safe_log(M_grid1), y=safe_log(F_grid1), z=safe_log(S_null),
+                colorscale=[[0,"seagreen"], [1, 'seagreen']],
+                name='dM/dt = 0', showscale=False, opacity=0.5,showlegend=True
+            ),
+            go.Surface(
+                x=safe_log(M_null), y=safe_log(F_grid2), z=safe_log(S_grid2),
+                colorscale=[[0, 'navy'], [1, "navy"]],
+                name='dF/dt = 0', showscale=False, opacity=0.5,showlegend=True
+            )
+        ]
+
+        layout = go.Layout(
+            scene=dict(
+                xaxis_title="log(Macrophages), log(cells/ml)",
+                yaxis_title="log₁₀(Myofibroblasts), log(cells/ml)",
+                zaxis_title="log₁₀(Senescent Cells), log(cells/ml)",
+                xaxis=dict(range=[start, stop]),
+                yaxis=dict(range=[start, stop]),
+                zaxis=dict(range=[start, stop]),
+            ),
+            legend=dict(
+                x=0.8, y=0.9,
+                bgcolor='rgba(255,255,255,0.5)'
+            )
+        )
+
+        fig = go.Figure(data=surfaces, layout=layout)
+        fig.update_layout(
+            legend=dict(
+                title="Nullclines",
+                itemsizing='trace'
+            )
+        )
+        fig.update_layout(
+        scene=dict(
+            xaxis=dict(
+                title="Macrophages (cells/ml)",
+                title_font=dict(size=18),    # axis title font size
+                tickfont=dict(size=12)      # tick label font size
+            ),
+            yaxis=dict(
+                title="Myofibroblasts (cells/ml)",
+                title_font=dict(size=18),
+                tickfont=dict(size=12)
+            ),
+            zaxis=dict(
+                title="Senescent cells (cells/ml)",
+                title_font=dict(size=18),
+                tickfont=dict(size=12)
+            )
+        )
+        )
+
+        if return_fig:
+            return fig
+        if show:
+            fig.show()
+
+
+
+    def plot_log_quiver_3D(self,
+                       M_range=(1e0, 1e5),
+                       F_range=(1e0, 1e5),
+                       S_range=(1e0, 1e5),
+                       n=4,
+                       sizeref=0.1,
+                       uniform_color="steelblue",
+                       opacity=0.7):
+        """
+        3D cone plot on log–log–log axes with:
+        • All cones the same length (sizeref).
+        • A single uniform color (uniform_color).
+        • Direction = unit‐vector of (dM,dF,dS).
+        """
+
+        # 1) Build log‐grid
+        exp_min_M, exp_max_M = np.log10(M_range[0]), np.log10(M_range[1])
+        exp_min_F, exp_max_F = np.log10(F_range[0]), np.log10(F_range[1])
+        exp_min_S, exp_max_S = np.log10(S_range[0]), np.log10(S_range[1])
+
+        logM_vals = np.linspace(exp_min_M, exp_max_M, n)
+        logF_vals = np.linspace(exp_min_F, exp_max_F, n)
+        logS_vals = np.linspace(exp_min_S, exp_max_S, n)
+
+        M_vals = 10 ** logM_vals
+        F_vals = 10 ** logF_vals
+        S_vals = 10 ** logS_vals
+
+        Mg, Fg, Sg = np.meshgrid(M_vals, F_vals, S_vals, indexing="ij")
+        X = Mg.ravel()
+        Y = Fg.ravel()
+        Z = Sg.ravel()
+
+        # 2) Compute raw (dM, dF, dS)
+        dM_flat = np.empty_like(X)
+        dF_flat = np.empty_like(X)
+        dS_flat = np.empty_like(X)
+
+        for idx, (m, f, s) in enumerate(zip(X, Y, Z)):
+            dM_flat[idx], dF_flat[idx], dS_flat[idx] = self.change_in_m_f(m, f, s)
+
+        # 3) Convert to (delta_x, delta_y, delta_z) in log‐space
+        eps = 1e-12
+        delta_x = (dM_flat / np.maximum(X, eps)) / np.log(10)
+        delta_y = (dF_flat / np.maximum(Y, eps)) / np.log(10)
+        delta_z = (dS_flat / np.maximum(Z, eps)) / np.log(10)
+
+        # 4) Compute magnitudes
+        magnitude = np.sqrt(delta_x**2 + delta_y**2 + delta_z**2)
+
+        # 5) Normalize to unit length where magnitude > 0
+        u = np.zeros_like(delta_x)
+        v = np.zeros_like(delta_y)
+        w = np.zeros_like(delta_z)
+
+        nonzero = magnitude > 0
+        u[nonzero] = delta_x[nonzero] / magnitude[nonzero]
+        v[nonzero] = delta_y[nonzero] / magnitude[nonzero]
+        w[nonzero] = delta_z[nonzero] / magnitude[nonzero]
+
+        # 6) Build the Cone trace with a single uniform color
+        X_tail = np.log10(X)
+        Y_tail = np.log10(Y)
+        Z_tail = np.log10(Z)
+
+        cone_trace = go.Cone(
+            x=X_tail,
+            y=Y_tail,
+            z=Z_tail,
+            u=u,
+            v=v,
+            w=w,
+            sizemode="absolute",
+            sizeref=sizeref,
+            anchor="tail",
+            colorscale=[[0, uniform_color], [1, uniform_color]],
+            showscale=False,opacity=opacity
+        )
+
+        fig = go.Figure(data=cone_trace)
+
+        # 7) Configure scene for log‐axes, equal aspect ratio
+        fig.update_layout(
+            scene=dict(
+                xaxis=dict(
+                    title="log₁₀(Macrophages)",
+                    range=[exp_min_M, exp_max_M],
+                    showgrid=True
+                ),
+                yaxis=dict(
+                    title="log₁₀(Myofibroblasts)",
+                    range=[exp_min_F, exp_max_F],
+                    showgrid=True
+                ),
+                zaxis=dict(
+                    title="log₁₀(Senescent Cells)",
+                    range=[exp_min_S, exp_max_S],
+                    showgrid=True
+                ),
+                aspectmode="cube",
+                camera=dict(eye=dict(x=1.4, y=1.4, z=1.2))
+            ),
+            margin=dict(l=0, r=0, t=30, b=0)
+        )
+
+        return fig
+
+
+
+
+
+
     def nullclines_3D(self, start, stop, steps):
         """
         Plot the three nullcline surfaces in 3D:
@@ -1541,7 +2062,6 @@ class fibrosis_senescence_model:
         ]
         ax.legend(handles=legend_handles, loc='upper left')
 
-        plt.tight_layout()
         plt.show()
     def plot_separatrix_surface_3D(self,
                                 initial_guess=(5e3, 5e3, 1e4),
@@ -1896,3 +2416,133 @@ class fibrosis_senescence_model:
         plt.show()
 
         return fig, ax
+    def monte_carlo_classify(self, 
+                                    n_samples=5000,
+                                    M_bounds=(0.01, 10**5.85),
+                                    F_bounds=(0.01, 10**4.5),
+                                    S_bounds=(0.01, 10**5.85),
+                                    t_end=200,
+                                    threshold=1.0,
+                                    save_file="monte_carlo_classification_new.npz"):
+        """
+        Monte Carlo classification over random (M,F,S) points.
+        Saves the results for use with marching cubes or Plotly.
+        """
+        M_samples = np.random.uniform(np.log10(M_bounds[0]), np.log10(M_bounds[1]), n_samples)
+        F_samples = np.random.uniform(np.log10(F_bounds[0]), np.log10(F_bounds[1]), n_samples)
+        S_samples = np.random.uniform(np.log10(S_bounds[0]), np.log10(S_bounds[1]), n_samples)
+
+        initial_conditions = 10 ** np.vstack([M_samples, F_samples, S_samples]).T
+
+        from concurrent.futures import ProcessPoolExecutor
+        import tqdm
+
+        print(f"🌱 Sampling {n_samples} points in (M,F,S) space...")
+        args = [(self, M, F, S, (0, t_end), threshold) for M, F, S in initial_conditions]
+
+        with ProcessPoolExecutor() as pool:
+            results = list(tqdm.tqdm(pool.map(self.integrate_and_classify, args), total=n_samples))
+
+        points = []
+        labels = []
+
+        for M, F, S, outcome in results:
+            if outcome in [0, 1]:
+                points.append([M, F, S])
+                labels.append(outcome)
+
+        points = np.array(points)
+        labels = np.array(labels)
+
+        # Save
+        np.savez(save_file, points=points, labels=labels)
+        print(f"💾 Saved {len(points)} classified samples to {save_file}")
+
+        return points, labels
+
+
+    def extract_marching_cubes_surface(self, pts, labels, resolution=50, level=0.5,sigma=1, cmap='Greys'):
+        """
+        Interpolate labeled Monte Carlo points onto a 3D grid and extract the separatrix via marching cubes.
+
+        Parameters:
+            pts      : ndarray of shape (N, 3), sampled (M,F,S) points
+            labels   : ndarray of shape (N,), 0 or 1 classification
+            resolution : number of bins per axis for voxelization
+            level    : iso-surface value (typically 0.5 for binary separation)
+            cmap     : colormap name for plotly surface
+
+        Returns:
+            verts, faces: for further use or export
+        """
+        from scipy.interpolate import griddata
+        from skimage import measure
+        import plotly.graph_objects as go
+        import numpy as np
+
+        logM = np.log10(pts[:, 0])
+        logF = np.log10(pts[:, 1])
+        logS = np.log10(pts[:, 2])
+
+        domain = [
+            (logM.min(), logM.max()),
+            (logF.min(), logF.max()),
+            (logS.min(), logS.max())
+        ]
+
+        print("📊 Interpolating data to 3D grid...")
+        xi = np.linspace(*domain[0], resolution)
+        yi = np.linspace(*domain[1], resolution)
+        zi = np.linspace(*domain[2], resolution)
+        grid_x, grid_y, grid_z = np.meshgrid(xi, yi, zi, indexing='ij')
+
+        grid_vals = griddata(
+            points=(logM, logF, logS),
+            values=labels,
+            xi=(grid_x, grid_y, grid_z),
+            method='linear',
+            fill_value=0.5
+        )
+        from scipy.ndimage import gaussian_filter
+
+        # Smooth the interpolated 3D data
+        smoothed_vals = gaussian_filter(grid_vals, sigma=sigma)  # adjust sigma as needed
+
+        print("📐 Extracting isosurface...")
+        verts, faces, _, _ = measure.marching_cubes(
+            smoothed_vals,
+            level=level,
+            spacing=(xi[1]-xi[0], yi[1]-yi[0], zi[1]-zi[0])
+        )
+
+        verts += np.array([xi[0], yi[0], zi[0]])
+
+        print("🎨 Rendering Plotly surface...")
+        i, j, k = faces.T
+
+        fig = go.Figure(data=[
+            go.Mesh3d(
+                x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
+                i=i, j=j, k=k,
+                opacity=0.5,
+                color='lightgrey',
+                name='Separatrix Surface'
+            )
+        ])
+
+        fig.update_layout(
+            title="Separatrix Surface (Monte Carlo + Marching Cubes)",
+            scene=dict(
+                xaxis_title="log₁₀(Macrophages)",
+                yaxis_title="log₁₀(Myofibroblasts)",
+                zaxis_title="log₁₀(Senescent Cells)",
+                xaxis=dict(range=[domain[0][0], domain[0][1]]),
+                yaxis=dict(range=[domain[1][0], domain[1][1]]),
+                zaxis=dict(range=[domain[2][0], domain[2][1]])
+            ),
+            margin=dict(l=0, r=0, b=0, t=40)
+        )
+
+        fig.show()
+
+        return verts, faces

@@ -27,7 +27,7 @@ def main():
     """Main function to execute the fibrosis-senescence model analysis."""
 
     t1 = time.time()  # Start runtime measurement
-    fit = False
+    fit = True
     # Constants for converting between time units
     min2day = 24 * 60  # Minutes to days
     day2min = 1 / min2day  # Days to minutes
@@ -46,180 +46,180 @@ def main():
     ax  = fig.add_subplot(111, projection="3d")
     # … draw your 3D nullclines & mesh …
 
-    # now draw the separatrix, auto-finding the saddle:
-    print("3D Separatrix")
-    cell_fsm.plot_separatrix_surface_fd(
-    M_range=(0.01,1e7),
-    F_range=(0.01,1e7),
-    S_range=(0.01,1e7),
-    resolution=80,
-    t_end=200,
-    threshold=1.0
-    )
-    cell_fsm.plot_separatrix_finite_difference_parallel(
-        M_range=(1e2, 1e6),
-        F_range=(1e2, 1e6),
-        S_range=(1e2, 1e6),
-        resolution=20,
-        t_end=100
-    )
+    # # now draw the separatrix, auto-finding the saddle:
+    # print("3D Separatrix")
+    # cell_fsm.plot_separatrix_surface_fd(
+    # M_range=(0.01,1e7),
+    # F_range=(0.01,1e7),
+    # S_range=(0.01,1e7),
+    # resolution=80,
+    # t_end=200,
+    # threshold=1.0
+    # )
+    # cell_fsm.plot_separatrix_finite_difference_parallel(
+    #     M_range=(1e2, 1e6),
+    #     F_range=(1e2, 1e6),
+    #     S_range=(1e2, 1e6),
+    #     resolution=20,
+    #     t_end=100
+    # )
 
-    sep3d = cell_fsm.plot_separatrix_surface_3D()
+    # sep3d = cell_fsm.plot_separatrix_surface_3D()
 
-    # finalize axes
-    ax.set_xlabel("log₁₀(Macrophages)")
-    ax.set_ylabel("log₁₀(Myofibroblasts)")
-    ax.set_zlabel("log₁₀(Senescent Cells)")
-    ax.legend()
-    plt.show()
-    """
-    FIXED POINTS
-    """
+    # # finalize axes
+    # ax.set_xlabel("log₁₀(Macrophages)")
+    # ax.set_ylabel("log₁₀(Myofibroblasts)")
+    # ax.set_zlabel("log₁₀(Senescent Cells)")
+    # ax.legend()
+    # plt.show()
+#     """
+#     FIXED POINTS
+#     """
 
-    fixed_S = 2000
-    fixed_pts = cell_fsm.fixed_pt_sweep([-2,7],[-2,7],fixed_S)
-    print(fixed_pts)
-    # Collect results
-    pty, ptx = [], []
-    labels = []
-    colors = []
+#     fixed_S = 2000
+#     fixed_pts = cell_fsm.fixed_pt_sweep([-2,7],[-2,7],fixed_S)
+#     print(fixed_pts)
+#     # Collect results
+#     pty, ptx = [], []
+#     labels = []
+#     colors = []
 
-    for M, F in fixed_pts:
-        S = fixed_S
-        info = cell_fsm.classify_slice(F, M, S, fixed={'S': S})
-        verdict = info['verdict']
+#     for M, F in fixed_pts:
+#         S = fixed_S
+#         info = cell_fsm.classify_slice(F, M, S, fixed={'S': S})
+#         verdict = info['verdict']
 
-        # Choose colour and label based on verdict
-        if "stable" in verdict.lower() and "saddle" not in verdict.lower():
-            color = 'red'
-            label = 'Stable'
-        elif "saddle" in verdict.lower():
-            color = 'purple'
-            label = 'Saddle'
-        else:
-            color = 'blue'
-            label = 'Unstable'
+#         # Choose colour and label based on verdict
+#         if "stable" in verdict.lower() and "saddle" not in verdict.lower():
+#             color = 'red'
+#             label = 'Stable'
+#         elif "saddle" in verdict.lower():
+#             color = 'purple'
+#             label = 'Saddle'
+#         else:
+#             color = 'blue'
+#             label = 'Unstable'
 
-        ptx.append(F)
-        pty.append(M)
-        colors.append(color)
-        labels.append(label)
-    print("Fixed points Calculated")
-    print(ptx,pty)
-################
-#%%
-    """
-    3D Quiver
-    """
-    # Define ranges for variables (adjust according to your system)
-    M_vals = np.logspace(-2, 7, 15)  # Macrophages range
-    F_vals = np.logspace(-2, 7, 15)  # Myofibroblasts range
-    S_vals = np.logspace(-2, 7, 15)  # Senescent cells range
+#         ptx.append(F)
+#         pty.append(M)
+#         colors.append(color)
+#         labels.append(label)
+#     print("Fixed points Calculated")
+#     print(ptx,pty)
+# ################
+# #%%
+#     """
+#     3D Quiver
+#     """
+#     # Define ranges for variables (adjust according to your system)
+#     M_vals = np.logspace(-2, 7, 15)  # Macrophages range
+#     F_vals = np.logspace(-2, 7, 15)  # Myofibroblasts range
+#     S_vals = np.logspace(-2, 7, 15)  # Senescent cells range
 
-    # Create a 3D grid for (M, F, S)
-    Mg, Fg, Sg = np.meshgrid(M_vals, F_vals, S_vals, indexing='ij')
+#     # Create a 3D grid for (M, F, S)
+#     Mg, Fg, Sg = np.meshgrid(M_vals, F_vals, S_vals, indexing='ij')
 
-    # Initialize derivative arrays for the vector field
-    U = np.zeros(Mg.shape)  # dM/dt
-    V = np.zeros(Mg.shape)  # dF/dt
-    W = np.zeros(Mg.shape)  # dS/dt
+#     # Initialize derivative arrays for the vector field
+#     U = np.zeros(Mg.shape)  # dM/dt
+#     V = np.zeros(Mg.shape)  # dF/dt
+#     W = np.zeros(Mg.shape)  # dS/dt
 
-    print("Initialisation")
-    # Compute the vector field at each grid point
-    for i in range(Mg.shape[0]):
-        for j in range(Mg.shape[1]):
-            for k in range(Mg.shape[2]):
-                state = [Mg[i, j, k], Fg[i, j, k], Sg[i, j, k]]  # Current state
-                dstate = cell_fsm.residual_fixed_point(state)  # Compute derivatives
-                U[i, j, k] = dstate[0]  # dM/dt
-                V[i, j, k] = dstate[1]  # dF/dt
-                W[i, j, k] = dstate[2]  # dS/dt
-    print("Vector Field done")
-    # Normalize the vector lengths for clarity in visualization
-    norm = np.sqrt(U**2 + V**2 + W**2)  # Compute vector magnitudes
-    norm[norm == 0] = 1.  # Avoid division by zero
-    U_norm = U / norm  # Normalise dM/dt
-    V_norm = V / norm  # Normalise dF/dt
-    W_norm = W / norm  # Normalise dS/dt
-    print("field lengths normalised")
-    # Flatten the grid and vector field for plotting
-    X = np.log10(Mg.flatten())  # Log-transformed macrophages
-    Y = np.log10(Fg.flatten())  # Log-transformed fibroblasts
-    Z = np.log10(Sg.flatten())  # Log-transformed senescent cells
-    U_flat = U_norm.flatten()  # Flattened dM/dt
-    V_flat = V_norm.flatten()  # Flattened dF/dt
-    W_flat = W_norm.flatten()  # Flattened dS/dt
-    mag = norm.flatten()  # Flattened magnitudes
-    print("flattened")
-# Normalise magnitudes to [0, 1] for colormap
-    mag_norm = (mag - mag.min()) / (mag.max() - mag.min())
-    print("normalised")
-# Create the 3D quiver plot for the vector field
-    cmap = cm.plasma  # Choose colormap
-    fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-    for xi, yi, zi, ui, vi, wi, m_val in zip(X, Y, Z, U_flat, V_flat, W_flat, mag_norm):
-        col = cmap(m_val)  # Map magnitude to color
-        ax.quiver(xi, yi, zi, ui, vi, wi, color=col, length=0.4, linewidth=0.5, alpha=0.5)
-    print("QPlot created")
-    ax.set_xlabel("Macrophages (log₁₀ M)")
-    ax.set_ylabel("Myofibroblasts (log₁₀ F)")
-    ax.set_zlabel("Senescent Cells (log₁₀ S)")
-    plt.title("3D Quiver Plot of the Vector Field with Fixed Points")
-    ax.legend()  # Add legend for fixed points
-    plt.show()  # Display the plot
-    #%%
-#####################################
-    """
-    2D Quiver
-    """
-    # Define your grid using np.logspace.
+#     print("Initialisation")
+#     # Compute the vector field at each grid point
+#     for i in range(Mg.shape[0]):
+#         for j in range(Mg.shape[1]):
+#             for k in range(Mg.shape[2]):
+#                 state = [Mg[i, j, k], Fg[i, j, k], Sg[i, j, k]]  # Current state
+#                 dstate = cell_fsm.residual_fixed_point(state)  # Compute derivatives
+#                 U[i, j, k] = dstate[0]  # dM/dt
+#                 V[i, j, k] = dstate[1]  # dF/dt
+#                 W[i, j, k] = dstate[2]  # dS/dt
+#     print("Vector Field done")
+#     # Normalize the vector lengths for clarity in visualization
+#     norm = np.sqrt(U**2 + V**2 + W**2)  # Compute vector magnitudes
+#     norm[norm == 0] = 1.  # Avoid division by zero
+#     U_norm = U / norm  # Normalise dM/dt
+#     V_norm = V / norm  # Normalise dF/dt
+#     W_norm = W / norm  # Normalise dS/dt
+#     print("field lengths normalised")
+#     # Flatten the grid and vector field for plotting
+#     X = np.log10(Mg.flatten())  # Log-transformed macrophages
+#     Y = np.log10(Fg.flatten())  # Log-transformed fibroblasts
+#     Z = np.log10(Sg.flatten())  # Log-transformed senescent cells
+#     U_flat = U_norm.flatten()  # Flattened dM/dt
+#     V_flat = V_norm.flatten()  # Flattened dF/dt
+#     W_flat = W_norm.flatten()  # Flattened dS/dt
+#     mag = norm.flatten()  # Flattened magnitudes
+#     print("flattened")
+# # Normalise magnitudes to [0, 1] for colormap
+#     mag_norm = (mag - mag.min()) / (mag.max() - mag.min())
+#     print("normalised")
+# # Create the 3D quiver plot for the vector field
+#     cmap = cm.plasma  # Choose colormap
+#     fig = plt.figure()
+#     ax = fig.add_subplot(projection='3d')
+#     for xi, yi, zi, ui, vi, wi, m_val in zip(X, Y, Z, U_flat, V_flat, W_flat, mag_norm):
+#         col = cmap(m_val)  # Map magnitude to color
+#         ax.quiver(xi, yi, zi, ui, vi, wi, color=col, length=0.4, linewidth=0.5, alpha=0.5)
+#     print("QPlot created")
+#     ax.set_xlabel("Macrophages (log₁₀ M)")
+#     ax.set_ylabel("Myofibroblasts (log₁₀ F)")
+#     ax.set_zlabel("Senescent Cells (log₁₀ S)")
+#     plt.title("3D Quiver Plot of the Vector Field with Fixed Points")
+#     ax.legend()  # Add legend for fixed points
+#     plt.show()  # Display the plot
+#     #%%
+# #####################################
+#     """
+#     2D Quiver
+#     """
+#     # Define your grid using np.logspace.
 
-   # plt.xscale('log')
-    #plt.yscale('log')
+#    # plt.xscale('log')
+#     #plt.yscale('log')
 
-    # Call the method on your model instance.
+#     # Call the method on your model instance.
 
-    sep_pos_1,sep_neg_1 = cell_fsm.separatrix(np.linspace(0,100,50),(ptx[1],pty[1],2000),epsilon=10)
-    sep_pos_2,sep_neg_2 = cell_fsm.separatrix(np.linspace(0,100,50),(pty[1],ptx[1],2000),epsilon=100)
+#     sep_pos_1,sep_neg_1 = cell_fsm.separatrix(np.linspace(0,100,50),(ptx[1],pty[1],2000),epsilon=10)
+#     sep_pos_2,sep_neg_2 = cell_fsm.separatrix(np.linspace(0,100,50),(pty[1],ptx[1],2000),epsilon=100)
 
-    plt.plot(sep_neg_2[1],sep_neg_2[0],'g')
-    plt.plot(sep_pos_2[1],sep_pos_2[0],'g')
-    #print("Fixed point in 3D (M, F, S):", fp1)
-    plt.scatter(ptx[0],pty[0],color='g',label="Stable Healing")
-    plt.scatter(ptx[1],pty[1])
-    plt.scatter(ptx[2],pty[2],color='r',label='Stable Hot Fibrosis Point')
+#     plt.plot(sep_neg_2[1],sep_neg_2[0],'g')
+#     plt.plot(sep_pos_2[1],sep_pos_2[0],'g')
+#     #print("Fixed point in 3D (M, F, S):", fp1)
+#     plt.scatter(ptx[0],pty[0],color='g',label="Stable Healing")
+#     plt.scatter(ptx[1],pty[1])
+#     plt.scatter(ptx[2],pty[2],color='r',label='Stable Hot Fibrosis Point')
 
-    # mFnull1, mFnull2, mFnull3 are intervals that do not contain any poles
-    FM_space = np.logspace(-2, 7, 10**3)
-    Fnull1 = np.logspace(-2, 5.7, 10**3)
-    Fnull2 = np.logspace(5.85, 5.95, 10**3)
-    Fnull3 = np.logspace(6.05, 7, 10**3)
-    xsmooth1 = [10**5.7, 10**5.85]
-    ysmooth1 = [cell_fsm.nullclines_F(pt)[1] for pt in xsmooth1]
+#     # mFnull1, mFnull2, mFnull3 are intervals that do not contain any poles
+#     FM_space = np.logspace(-2, 7, 10**3)
+#     Fnull1 = np.logspace(-2, 5.7, 10**3)
+#     Fnull2 = np.logspace(5.85, 5.95, 10**3)
+#     Fnull3 = np.logspace(6.05, 7, 10**3)
+#     xsmooth1 = [10**5.7, 10**5.85]
+#     ysmooth1 = [cell_fsm.nullclines_F(pt)[1] for pt in xsmooth1]
 
-    F_vals, M_vals = np.vectorize(cell_fsm.nullclines_M, otypes=[float, float])(FM_space)
-    plt.plot(F_vals, M_vals, 'r', label='Macrophage nullcline')
-    # print(F_vals)
+#     F_vals, M_vals = np.vectorize(cell_fsm.nullclines_M, otypes=[float, float])(FM_space)
+#     plt.plot(F_vals, M_vals, 'r', label='Macrophage nullcline')
+#     # print(F_vals)
 
-    plt.plot(xsmooth1, ysmooth1, 'b')
-    plt.plot(cell_fsm.nullclines_F(Fnull1)[0], cell_fsm.nullclines_F(Fnull1)[1], 'b', label = 'Myofibroblasts nullcline')
-    plt.plot(cell_fsm.nullclines_F(Fnull2)[0], cell_fsm.nullclines_F(Fnull2)[1], 'b')
-    plt.plot(cell_fsm.nullclines_F(Fnull3)[0], cell_fsm.nullclines_F(Fnull3)[1], 'b')
+#     plt.plot(xsmooth1, ysmooth1, 'b')
+#     plt.plot(cell_fsm.nullclines_F(Fnull1)[0], cell_fsm.nullclines_F(Fnull1)[1], 'b', label = 'Myofibroblasts nullcline')
+#     plt.plot(cell_fsm.nullclines_F(Fnull2)[0], cell_fsm.nullclines_F(Fnull2)[1], 'b')
+#     plt.plot(cell_fsm.nullclines_F(Fnull3)[0], cell_fsm.nullclines_F(Fnull3)[1], 'b')
 
-    plt.legend(fontsize=5)
-    plt.xlabel("Fibroblasts")
-    plt.ylabel("Macrophages")
-    plt.xscale('log')
-    plt.yscale('log')
-    M_vals = np.logspace(-2,7,40) # Myofibroblast concentrations (x-axis)
-    F_vals = np.logspace(-2,7,40)  # Macrophage concentrations (y-axis)
-   # M_vals = np.linspace(0,20,40)
-   # F_vals = np.linspace(0,20,40)
+#     plt.legend(fontsize=5)
+#     plt.xlabel("Fibroblasts")
+#     plt.ylabel("Macrophages")
+#     plt.xscale('log')
+#     plt.yscale('log')
+#     M_vals = np.logspace(-2,7,40) # Myofibroblast concentrations (x-axis)
+#     F_vals = np.logspace(-2,7,40)  # Macrophage concentrations (y-axis)
+#    # M_vals = np.linspace(0,20,40)
+#    # F_vals = np.linspace(0,20,40)
 
-    fixed_S = 2000  # Set a biologically relevant fixed value for Senescent cells
+#     fixed_S = 2000  # Set a biologically relevant fixed value for Senescent cells
 
-    cell_fsm.plot_2D_quiver_field_fixed_S(M_vals, F_vals, fixed_S,x_label="Myofibroblast Conc.",y_label="Macrophage Conc.")
+#     cell_fsm.plot_2D_quiver_field_fixed_S(M_vals, F_vals, fixed_S,x_label="Myofibroblast Conc.",y_label="Macrophage Conc.")
 
 ####### TRAJECTORIES #######
     # pulses_M = [(0,0,0)]
@@ -263,6 +263,8 @@ def main():
     FITTING: To simplify the system, we have non-dimensionalised the system to reduce the number of parameters
     Sensitivity analysis first to find out what the more important factors are
     """
+        # Example usage:
+
     if fit==True:
         print("Fitting")
         initial_state_fit = spm.state_fsm(10, 10, 10, 10, 10)  # Initial cell populations, M, F, P, C, S
@@ -270,6 +272,16 @@ def main():
                                     beta1=470 * min2day,beta2=70 * min2day,beta3=240 * min2day,
                                     alpha1=940 *min2day,alpha2=510 *min2day, gamma=2,
                                     n=0.0003,h=50, r=24, q=1e5)  # Parameters for the model
+        model = fsm.fibrosis_senescence_model(params_fit, initial_state_fit)
+        data = model.preprocess_data(r"C:\Users\niall\Documents\MPhys\Systems-Medicine-for-Chronic-Kidney-Disease\cell_numbers_for_model.xlsx")
+
+        param_names = ['lam1','lam2','mu1','mu2','beta1','beta2','beta3','alpha1','alpha2','gamma','n','h','r','q']
+        initial_guess = [model.lam1, model.lam2, model.mu1, model.mu2, model.beta1, model.beta2, model.beta3,
+                        model.alpha1, model.alpha2, model.gamma, model.n, model.h, model.r, model.q]
+        bounds = [(1e-6, 1e6)] * len(param_names) 
+        y0 = [model.stateM, model.stateF, model.stateS]
+        result = model.fit_dimensional(param_names, initial_guess, bounds, data, y0)
+
 
         fitting_fsm = fsm.fibrosis_senescence_model(params_fit, initial_state_fit)
         fitting_fsm.define_dimensionless_parameters(M0=22,S0=80) # Create dimensionless parameters, use max for M0 and s)

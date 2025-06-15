@@ -17,13 +17,16 @@ settings.json
 
 # C extensions
 *.so
-# Ignore image files
+# Ignore image files, html and Excel
 *.png
 *.jpg
 *.jpeg
 *.gif
 *.bmp
 *.tiff
+*.html
+*.xlsx
+*.npz
 # Distribution / packaging
 .Python
 build/
