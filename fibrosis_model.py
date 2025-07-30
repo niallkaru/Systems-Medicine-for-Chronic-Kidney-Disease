@@ -150,15 +150,6 @@ class fibrosis_model:
         M0, F0 = X0
         return [np.subtract(self.nullclines_M(M0)[0],self.nullclines_F(F0)[0]), np.subtract(self.nullclines_M(M0)[1],self.nullclines_F(F0)[1])]
     
-    # def fixed_points(self,initial_guess = np.array([1e4,1e4])):
-    #     """
-    #     We want fixed points, where the nullclines cross ie. Fdot = Mdot
-    #     So using scipy.optimize (sic, American spelling)
-    #     and a function to find the difference between them
-    #     """
-    #     x = opt.fsolve(self.subtract_nulls, initial_guess)
-    #     return np.array(x)
-    
     def residual_fixed_point(self, X):
         """
         Compute the residuals for steady-state conditions.
@@ -189,42 +180,11 @@ class fibrosis_model:
         eigenvals,eigenvecs = self.eigen(fixed_pt)
         print(f'Eigenvalues at fixed point {fixed_pt}: {eigenvals}, {"Stable" if np.all(eigenvals<0) else "Unstable"}')
         return fixed_pt
-    # def fixed_pt_sweep(self,xrange,yrange):
-    #             # Example parameters (fill in with your own limits)
-    #     xvals = np.logspace(xrange[0], xrange[-1], 35)  # e.g., for Myofibroblast concentration (F)
-    #     yvals = np.logspace(yrange[0], yrange[-1], 35)  # e.g., for Macrophage concentration (M)
-    #     #xvals = np.linspace(xrange[0], xrange[-1], 100)  # e.g., for Myofibroblast concentration (F)
-    #     #yvals = np.linspace(yrange[0], yrange[-1], 100)  # e.g., for Macrophage concentration (M)
-    #     # C
-    #     # Create the grid
-    #     grid_x, grid_y = np.meshgrid(xvals, yvals, indexing='ij')
-    #     #print(grid_x,"\n",grid_y)
-
-    #     # Use np.vectorize to apply your fixed_points_3D function.
-    #     # Note: The lambda returns a tuple (or slice of an array) containing the first two coordinates.
-    #     vect_fun = np.vectorize(lambda M, F: (self.fixed_points([M, F])[0], self.fixed_points([M, F])[1]))
-    #     #print(vect_fun) # Issue is here!
-    #     # This returns two arrays of shape (35, 35)
-    #     #print("Finished lambda func")
-    #     sol1, sol2 = vect_fun(grid_x, grid_y)
-    #     # Now, combine these two arrays into an array of shape (35*35, 2)
-    #     combined_sols = np.stack((sol1, sol2), axis=-1).reshape(-1, 2)
-    #     #print(f'combined sols {combined_sols}')
-    #     # Use np.unique to filter duplicate coordinate pairs.
-    #     combined_sols = combined_sols[~np.isnan(combined_sols).any(axis=1)]
-
-    #     # Make sure to call np.unique along axis 0.
-    #     filtered_sols = np.unique(combined_sols, axis=0)
-    #     #print("filtered sols",filtered_sols)
-    #     #sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-5) for sol in filtered_sols]
-    #    # print(sols)
-    #     sols = filtered_sols
-    #     return sols
+    
     def perturb_fixed_point(self,fp, epsilon=1e-2,tol=1e-5):
         """
         Replace any zero entries in the fixed point fp with epsilon.
         """
-        # If using numpy, you can use np.where:
         fp = np.where(fp <= tol, epsilon, fp)
         return fp
     def fixed_point_cold(self,initial_guess=np.array([1e5,0])):
@@ -232,7 +192,7 @@ class fibrosis_model:
                            (self.K / self.lam1) * (self.lam1 - self.mu1) * (self.beta3 - self.alpha2) - self.gamma * self.k1,
                            (self.K * self.k1 / self.lam1) * (self.beta3 * self.lam1 - 2 * self.mu1 * self.beta3 + self.mu1 *self.alpha2),
                            -self.k1**2 * self.mu1 * self.K * self.beta3 / self.lam1])
-                # rearranged from eqns in transparent methods
+                # rearranged from eqns in transparent methods of Adler paper
             coldP= np.roots(P_coeff)
             coldF = []
             
@@ -327,7 +287,7 @@ class fibrosis_model:
 
         C1_C2_steady = self.steady_state_CP(M,F)
         #print(f'C1_C2_steady {C1_C2_steady}')
-        C = C1_C2_steady[0][0]#Funny way of grabbing them due to how I organised C1_C2_steady, just roll with it
+        C = C1_C2_steady[0][0]
         P = C1_C2_steady[1][0]
         #print(M,F)
         M_dot = M*(self.lam2*(C/(self.k2+C)) - self.mu2) + self.heavyside_pulses(pulses, t)
@@ -350,7 +310,7 @@ class fibrosis_model:
 
         C1_C2_steady = self.steady_state_CP(M,F)
         #print(f'C1_C2_steady {C1_C2_steady}')
-        C = C1_C2_steady[0][0]#Funny way of grabbing them due to how I organised C1_C2_steady, just roll with it
+        C = C1_C2_steady[0][0]#
         P = C1_C2_steady[1][0]
         dMdM = (self.lam2*C)/(self.k2+C) - self.mu2
         dMdF = 0
@@ -484,12 +444,12 @@ class fibrosis_model:
             dM/dt = 0,  dF/dt = 0
             """
             M, F = X
-            # Obtain C and P via your steady_state_CP function.
+            # Obtain C and P via steady_state_CP function.
             CF_steady = self.steady_state_CP(M, F)
             C = CF_steady[0]#[0]
             P = CF_steady[1]#[0]
             
-            # Compute each derivative
+
             dMdt = M * (self.lam2 * (C / (self.k2 + C)) - self.mu2)
             dFdt = F * (self.lam1 * (P / (self.k1 + P)) * (1 - (F / self.K)) - self.mu1)
             
@@ -513,9 +473,6 @@ class fibrosis_model:
             using your analytic formulas for the partial derivatives.
             """
             # quasi‐steady C,P
-            # C_array, P_array = self.steady_state_CP(M, F)
-            # C = C_array[0]
-            # P = P_array[0]
             CF_steady = self.steady_state_CP(M, F)
             C = CF_steady[0][0]
             P = CF_steady[1][0]
@@ -530,6 +487,10 @@ class fibrosis_model:
                 [dMdM,  dMdF],
                 [dFdM,  dFdF]]) 
     def classify_by_dynamics(self, M0, F0, eps=1e-2):
+        """
+        Find out the classification of stable points using dynamics (behaviour around point)
+        rather than eigenvalues
+        """
         directions = [
             np.array([eps, 0]),
             np.array([-eps, 0]),
@@ -562,7 +523,7 @@ class fibrosis_model:
 
     def classify_2D(self, M, F, method="eigen", tol_zero=1e-7, rel_tol=1e-2, eps=1e-2):
         """
-        Classify the stability of a fixed point using either the Jacobian eigenvalues
+        Classify the stability of a fixed point using either the eigenvalues of Jacobian
         or by probing dynamics in nearby directions.
 
         Parameters:
@@ -596,7 +557,7 @@ class fibrosis_model:
             }
 
         elif method == "dynamics":
-            # Directions to probe (8-point star)
+            # Directions to probe 
             directions = [
                 np.array([eps, 0]),
                 np.array([-eps, 0]),
@@ -634,38 +595,26 @@ class fibrosis_model:
 
 
     def fixed_pt_sweep(self,xrange,yrange,perturb=True,classify=False):
-                # Example parameters (fill in with your own limits)
-        xfull = np.logspace(xrange[0], xrange[-1], 35)  # e.g., for Myofibroblast concentration (F)
-        yfull = np.logspace(yrange[0], yrange[-1], 35)  # e.g., for Macrophage concentration (M)
-        #xvals = np.linspace(xrange[0], xrange[-1], 100)  # e.g., for Myofibroblast concentration (F)
-        #yvals = np.linspace(yrange[0], yrange[-1], 100)  # e.g., for Macrophage concentration (M)
-        # C
-        # Create the grid
+        xfull = np.logspace(xrange[0], xrange[-1], 35)  # for Myofibroblast concentration (F)
+        yfull = np.logspace(yrange[0], yrange[-1], 35)  #  for Macrophage concentration (M)
+
+        # Create grid
         xvals = xfull[::3]
         yvals = yfull[::3]
         grid_x, grid_y = np.meshgrid(xvals, yvals, indexing='ij')
-        #print(grid_x,"\n",grid_y)
 
-        # Use np.vectorize to apply your fixed_points_3D function.
-        # Note: The lambda returns a tuple (or slice of an array) containing the first two coordinates.
         vect_fun = np.vectorize(lambda M, F: (self.fixed_points_2D([M, F])[0], self.fixed_points_2D([M, F])[1]))
-        #print(vect_fun) # Issue is here!
-        # This returns two arrays of shape (35, 35)
+
+
         print("Finished lambda func")
         sol1, sol2 = vect_fun(grid_x, grid_y)
-        # Now, combine these two arrays into an array of shape (35*35, 2)
         combined_sols = np.stack((sol1, sol2), axis=-1).reshape(-1, 2)
-        #print(f'combined sols {combined_sols}')
-        # Use np.unique to filter duplicate coordinate pairs.
         combined_sols = combined_sols[~np.isnan(combined_sols).any(axis=1)]
+        # Use np.unique to filter duplicate coordinate pairs.
 
-        # Make sure to call np.unique along axis 0.
         unique_sols = np.unique(np.round(combined_sols,2), axis=0)
         filtered_sols = unique_sols[np.all(unique_sols>=0,axis=1)]
-        #print("filtered sols",filtered_sols)
-        #sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-5) for sol in filtered_sols]
-        # print(sols)
-        # print(len(combined_sols),len(filtered_sols))
+
         sols = filtered_sols
 
 

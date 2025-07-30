@@ -262,7 +262,7 @@ class fibrosis_senescence_model:
         2D “negative” RHS for (M,F) at fixed S – returns dM, dF, dS=0 so that S is frozen.
         """
         M, F, S = y
-        # compute your quasi‑steady C,P exactly as before
+        # compute quasi‑steady C,P
         C, P = self.steady_state_CP(M, F)
         C = C[0];  P = P[0]
 
@@ -290,9 +290,7 @@ class fibrosis_senescence_model:
         """ Return the growth rate of M and F assuming steady state of P and C, essentially
         same equations as the equations function, but with steady C and P. This version is not
         used in the numerical integrators"""
-        # M = y[0]
-        # F = y[1]
-        # S = y[2]
+
         CF_steady = self.steady_state_CP(M,F)
         C = CF_steady[0][0]
         P = CF_steady[1][0]
@@ -338,7 +336,7 @@ class fibrosis_senescence_model:
         F = max(0, X[1])
         S = max(0,X[2])
         C1_C2_steady = self.steady_state_CP(M,F)
-        C = C1_C2_steady[0][0]#Funny way of grabbing them due to how I organised C1_C2_steady, just roll with it
+        C = C1_C2_steady[0][0]
         P = C1_C2_steady[1][0]
 
 
@@ -353,11 +351,10 @@ class fibrosis_senescence_model:
         """
         sol = solve_ivp(self.constant_injury,(t[0],t[-1]),X,t_eval=t,args = (pulses_M,pulses_S,),method='Radau')
         def enforce_non_negative(y):
-            # Enforce non-negative values for the solver.
+            # Enforce non-negative values for solver.
             return np.maximum(y, 0)
         sol.y = np.apply_along_axis(enforce_non_negative, 0, sol.y)
 
-        #print(M_dot, F_dot)
         return sol
     
 
@@ -384,13 +381,10 @@ class fibrosis_senescence_model:
         S = X[2]
 
         C1_C2_steady = self.steady_state_CP(M,F)
-        C = C1_C2_steady[0][0]#Funny way of grabbing them due to how I organised C1_C2_steady
+        C = C1_C2_steady[0][0]#
         P = C1_C2_steady[1][0]
         length_r = len(r_range)
         length_n = len(n_range)
-       # if length_r != length_n:
-            #raise ValueError("Must have equal numbers of r and n.")
-        #print(f'C1_C2_steady {C1_C2_steady}')
 
         #print(M,F)
         results_M = np.empty((length_r, length_n))
@@ -411,24 +405,20 @@ class fibrosis_senescence_model:
                 results_S[i, j] = sol.y[2, -1]
 
         plt.pcolormesh(n_range, r_range, results_F, shading='auto', cmap='plasma')
-        #plt.xscale('log')
-        #plt.yscale('log')
         plt.colorbar(label='Final Myofibroblast Cell Population (F)')
         plt.xlabel('n (Production rate of M due to S)')
         plt.ylabel('r (Senescent Cell Removal Rate)')
         plt.title('Myofibroblast Population Heatmap')
         plt.show(block=True)
         plt.pcolormesh(n_range, r_range, results_M, shading='auto', cmap='plasma')
-        #plt.xscale('log')
-        #plt.yscale('log')
+
         plt.colorbar(label='Final Macrophage Cell Population (M)')
         plt.xlabel('n (Production rate of M due to S)')
         plt.ylabel('r (Senescent Cell Removal Rate)')
         plt.title('Macrophage Population Heatmap')
         plt.show(block=True)
         plt.pcolormesh(n_range, r_range, results_S, shading='auto', cmap='plasma')
-        #plt.xscale('log')
-        #plt.yscale('log')
+
         plt.colorbar(label='Final SnC Population (F)')
         plt.xlabel('n (Production rate of M due to S)')
         plt.ylabel('r (Senescent Cell Removal Rate)')
@@ -444,7 +434,7 @@ class fibrosis_senescence_model:
         dM/dt = 0,  dF/dt = 0,  dS/dt = 0
         """
         M, F, S = X
-        # Obtain C and P via your steady_state_CP function.
+        # Obtain C and P via steady_state_CP function.
         CF_steady = self.steady_state_CP(M, F)
         C = CF_steady[0][0]
         P = CF_steady[1][0]
@@ -475,11 +465,9 @@ class fibrosis_senescence_model:
         """
         res = opt.root(self.residual_fixed_point, initial_guess,method='hybr')
         if not res.success:
-            #print("Fixed Point failure: ",initial_guess)
             return np.array([np.nan, np.nan, np.nan])
 
         fixed_pt = res.x
-        # fixed_pt = self.perturb_fixed_point(res.x,epsilon=1e-2,tol=1e-1)
         return fixed_pt
     def fixed_pt_sweep(self, xrange, yrange, z_fixed, mode='slice', method='eigen', perturb=True, classify=True):
         """
@@ -527,7 +515,6 @@ class fibrosis_senescence_model:
                 raise ValueError("mode must be 'slice' or 'full'")
 
             meta[i] = res
-           # print(f"{mode.upper()} @ S={S}: {res['verdict'] if 'verdict' in res else 'no verdict'}")
 
         if perturb:
             sols = [self.perturb_fixed_point(sol, epsilon=1e-2, tol=1e-1) for sol in filtered_sols]
@@ -684,11 +671,9 @@ class fibrosis_senescence_model:
 
 
         C1_C2_steady = self.steady_state_CP(M,F)
-        #print(f'C1_C2_steady {C1_C2_steady}')
-        C = C1_C2_steady[0][0]#Funny way of grabbing them due to how I organised C1_C2_steady, just roll with it
+        C = C1_C2_steady[0][0]
         P = C1_C2_steady[1][0]
-        #rows z/dM,z/dF,z/dS
-        #cols dM/z,dF/z,dS/z
+
         dMdM = (self.lam2*C)/(self.k2+C) - self.mu2
         dMdF = 0
         dMdS = self.n
@@ -710,7 +695,6 @@ class fibrosis_senescence_model:
         jacobian[2,2] = dSdS
         eigenvals,eigenvecs = np.linalg.eig(jacobian)
         return eigenvals,eigenvecs
-        #print(eigenvals,eigenvecs)
 
     def separatrix_eigen(self,M,F,S):
         eigenvals,eigenvecs = self.eigen(M,F,S)
@@ -740,20 +724,18 @@ class fibrosis_senescence_model:
             M = X[0]
             F = X[1]
             S = X[2]
-            # eigenval,unstable_vector = self.separatrix_eigen(M,F,S)
-            # # Try perturbing in just M
+
             (vals2, vecs2), _ = self.eigen_slice(M, F, S, fixed={'S':S})
             # find the index of the positive (most unstable) eigenvalue
             idx = np.argmin(np.real(vals2))  
             # extract the 2D eigenvector
             v2d = vecs2[:, idx]
-            # normalize
             v2d = v2d / np.linalg.norm(v2d)
             unstable_vector = np.array([ v2d[0],  # M‑component
                  v2d[1],  # F‑component
                  0.0 ])   # S‑component fixed
-            #unstable_vector = np.array((1,0,0))
-            print(unstable_vector,vals2)
+            
+            #print(unstable_vector,vals2)
             initial_pos = X+epsilon*np.array([v2d[0], v2d[1], 0.0]) #Perturb a little
             initial_neg = X-epsilon**np.array([v2d[0], v2d[1], 0.0]) #Perturb a little, other direction
 
@@ -761,13 +743,13 @@ class fibrosis_senescence_model:
             sep_traj_neg = solve_ivp(self.change_in_m_f_to_int_neg_2D, (t[0], t[-1]), initial_neg, t_eval=t,method='Radau',rtol=1e-9, atol=1e-12)
             pos_M,pos_F,pos_S = sep_traj_pos.y[0],sep_traj_pos.y[1],sep_traj_pos.y[2]
             neg_M,neg_F,neg_S = sep_traj_neg.y[0],sep_traj_neg.y[1],sep_traj_neg.y[2]
+
             # Chop if it loops back
             pos_M = pos_M[:np.argmin(pos_M)] if np.any(np.diff(pos_M) < 0) else pos_M
             pos_F = pos_F[:len(pos_M)]
 
             pos_traj =[pos_M,pos_F,pos_S]
             neg_traj= [neg_M,neg_F,neg_S]
-            #print(f'pos_traj {pos_traj}\nneg_traj {neg_traj}')
             return pos_traj, neg_traj
 
     def planar_rhs(self,t, y):
@@ -782,12 +764,12 @@ class fibrosis_senescence_model:
         """
         Creates a 2D quiver plot of the M-F vector field for the new fibrosis-senescence
         model by fixing the Senescent (S) value. It uses a log-spaced grid for the x- and y-axes,
-        computes the derivatives at each (M, F) point for the fixed S, then normalizes the vectors
-        and colors them by their (relative) magnitude.
+        computes the derivatives at each (M, F) point for the fixed S, then normalises the vectors
+        and colours them by their (relative) magnitude.
         
         Parameters:
-        x_vals: 1D array of Myofibroblast concentrations (e.g. generated via np.logspace)
-        y_vals: 1D array of Macrophage concentrations (e.g. via np.logspace)
+        x_vals: 1D array of Myofibroblast concentrations
+        y_vals: 1D array of Macrophage concentrations
         fixed_S: Fixed value for the Senescent cell concentration
         x_label: Label for the x-axis (default "Myofibroblast Conc.")
         y_label: Label for the y-axis (default "Macrophage Conc.")
@@ -795,31 +777,24 @@ class fibrosis_senescence_model:
         Assumes that the model has a method `change_in_m_f(M, F, S)` that returns a tuple:
         (dM/dt, dF/dt)
         """
-        # Create a grid using the provided x and y values
         X, Y = np.meshgrid(x_vals, y_vals)
         
-        # Use np.vectorize to compute the directional derivatives for each point.
-        # Note: We pass Y as the first argument and X as the second so that the lambda receives:
-        #       M = value from Y (macrophages) and F = value from X (myofibroblasts)
-        # Adjust this order if your model expects a different convention.
         vector_func = np.vectorize(
             lambda M, F: self.change_in_m_f(M, F, fixed_S)[0:2],
             otypes=[float, float]
         )
+
         # Here, the convention is: first returned value is dM/dt, second is dF/dt.
         DY, DX = vector_func(Y, X)
         
-        # Scale the derivatives by the state to get relative (or percentage) rates.
-        # This step mimics your original normalization where you divide by the coordinate values.
+
         DX = DX / X
         DY = DY / Y
         
-        # Compute the norm of the (DX, DY) arrows.
         norm = np.hypot(DX, DY)
         norm[norm == 0] = 1.0  # avoid division by zero
         
-        # Normalize the derivatives so that all arrows have the same length;
-        # the original magnitude (norm) is kept for color-coding.
+
         DX_norm = DX / norm
         DY_norm = DY / norm
         log_norm = np.log10(norm + 1e-9)
@@ -831,7 +806,7 @@ class fibrosis_senescence_model:
         
 
         
-        # Add a colorbar for the vector magnitude.
+        # Add a colourbar for the vector magnitude.
         cbar = plt.colorbar(Q)
         cbar.set_label("Relative Growth Rate (Normalised)")
         
@@ -930,8 +905,7 @@ class fibrosis_senescence_model:
             method='Radau',
             vectorized=False
         )
-        #print("Requested t_eval length:", len(t_eval))
-        #print("Returned solution length:", len(result.t))
+
         if len(result.t) != len(t_eval):
             print("Solver returned fewer timepoints than requested.")
             raise RuntimeError("ODE solver failed to complete all timepoints.")
@@ -1042,8 +1016,7 @@ class fibrosis_senescence_model:
         # --- Added weights to balance importance of each variable ---
         # Since f is often much smaller due to being scaled by K, we up-weight its loss term
         w_m, w_f, w_s = 1.0, 1.0, 1.0
-        #print(f"theta = {theta}")
-       # print(f"m_sim shape: {m_sim.shape}, m_obs: {len(m_obs)}")
+
 
         sse = 0.0
         if len(f_obs):
@@ -1157,17 +1130,6 @@ class fibrosis_senescence_model:
             minimizer_kwargs=minimizer_kwargs,
             niter=100
         )
-        # from scipy.optimize import differential_evolution
-
-        # result = differential_evolution(
-        #     func=self.least_squares_loss,
-        #     bounds=bounds,
-        #     args=(param_names, data_dict, y0),
-        #     maxiter=500,       # number of generations to run
-        #     popsize=15,        # population size multiplier
-        #     tol=1e-6,          # convergence tolerance
-        #     polish=True        # refine best member with L-BFGS-B at the end
-        # )
 
         best_params = result.x
         print("Best fit parameters:")
@@ -1185,7 +1147,6 @@ class fibrosis_senescence_model:
         tau_data = sol.t
         m_sim, f_sim, s_sim = sol.y
         p_series = self.compute_p_from_sim(m_sim, f_sim)
-        #p_series = self.compute_P_from_sim_dim(m_sim, f_sim)
 
         plt.plot(tau_data, p_series, label='PDGF (dimensionless p)', color='orange')
         plt.xlabel('Time (τ)')
@@ -1268,7 +1229,7 @@ class fibrosis_senescence_model:
         y0 : array-like [M0, F0, S0]
             Initial conditions for macrophages, fibroblasts, senescent cells.
         """
-        # Prepare minimizer arguments (SLSQP with bounds)
+        # Prepare minimiser arguments (SLSQP with bounds)
         minimizer_kwargs = {
             'method': 'SLSQP',
             'bounds': bounds
@@ -1370,7 +1331,7 @@ class fibrosis_senescence_model:
                 verdict_eigen = "saddle / unstable in slice"
 
         if method in ['dynamics', 'both']:
-            # Probe 2D slice directions: ±x, ±y, diagonals
+            # Probe 2D slice directions: +-x, +-y, diagonals
             directions = []
             for dx in [-1, 0, 1]:
                 for dy in [-1, 0, 1]:
@@ -1506,11 +1467,9 @@ class fibrosis_senescence_model:
             var_names = ['M','F','S']
             J_full    = self.jacobian_full(M, F, S)
 
-            # which indices are fixed?
             fixed_idx = [var_names.index(k) for k in fixed.keys()]
             free_idx  = [i for i in range(3) if i not in fixed_idx]
 
-            # extract the in‐slice block J_ff and transverse block J_perp
             J_ff   = J_full[np.ix_(free_idx, free_idx)]
             J_perp = J_full[np.ix_(fixed_idx, fixed_idx)]
 
@@ -1566,20 +1525,19 @@ class fibrosis_senescence_model:
                     mode='lines',
                     line=dict(color='black', width=4),
                     name='M-F Nullcline Intersection',
-                    legendgroup='fixed_curve',    # group both traces
-                    showlegend=first            # only show legend on first trace
+                    legendgroup='fixed_curve',   
+                    showlegend=first           
                 ))
                 first = False
 
         if plot:
             fig.update_layout(
                 legend=dict(
-                    x=0.85,         # move from 1.02 to ~0.85 (85% of figure width)
-                    y=0.90,         # move slightly down from 1.0 so it doesn’t collide with the top margin
-                    xanchor="left", # interpret x=0.85 as the left edge of the legend
+                    x=0.85, 
+                    y=0.90,        
+                    xanchor="left", 
                     yanchor="top",
                 ),
-                margin=dict(r=40)   # you might need a small right margin so the legend text doesn’t get cropped
             )
             fig.update_layout(
                 scene=dict(
@@ -1625,141 +1583,10 @@ class fibrosis_senescence_model:
             if show:
                 fig.show()
 
-        # Return just the concatenated values
         if fig == None:
-            return None  # You could optionally return both chunks here if needed
+            return None  #
         else:
             return fig
-    def fixed_curve_3D(self, F_range=(1e-2, 10**8), num_points=400, fig=None, plot=True):
-        """
-        Compute & plot the fixed curve, coloring each segment by stability:
-        • orangered = stable
-        • plum      = semi‐stable (saddle)
-        • skyblue   = unstable
-        """
-
-        # … (same F_segments construction as before) …
-        F_segments = [
-            np.logspace(np.log10(F_range[0]), np.log10(1.5e4), num_points // 2),
-            np.logspace(np.log10(2.2e4), np.log10(F_range[1]), num_points // 2)
-        ]
-        if fig is None and plot:
-            fig = go.Figure()
-
-        # Replace this helper with your new color choices:
-        def verdict_to_color(v):
-            if   "stable"   in v: return "orangered"
-            elif "saddle"   in v: return "plum"
-            elif "unstable" in v: return "skyblue"
-            else:                 return "gray"   # fallback if something unexpected appears
-
-        for block_idx, F_vals in enumerate(F_segments):
-            M_list, S_list, F_list, V_list = [], [], [], []
-
-            for F in F_vals:
-                try:
-                    M = self.nullclines_F(F)[1]
-                    S = (self.h * self.q) / (self.r * M - self.h)
-                except:
-                    M, S = np.nan, np.nan
-
-                if np.isreal(M) and np.isreal(S) and (M > 0) and (S > 0):
-                    M_list.append(M)
-                    S_list.append(S)
-                    F_list.append(F)
-
-                    # Classify with the full‐3D Jacobian (verdict is "stable","saddle", or "unstable")
-                    cinfo = self.classify_full(M, F, S, method="dynamics")
-                    V_list.append(cinfo["verdict"])
-                else:
-                    M_list.append(np.nan)
-                    S_list.append(np.nan)
-                    F_list.append(np.nan)
-                    V_list.append("invalid")
-
-            M_arr = np.array(M_list)
-            S_arr = np.array(S_list)
-            F_arr = np.array(F_list)
-            V_arr = np.array(V_list)
-
-            good_mask = (~np.isnan(M_arr)) & (~np.isnan(S_arr)) & (V_arr != "invalid")
-            M_arr = M_arr[good_mask]
-            S_arr = S_arr[good_mask]
-            F_arr = F_arr[good_mask]
-            V_arr = V_arr[good_mask]
-
-            if not plot or (len(M_arr) == 0):
-                continue
-
-            # Break V_arr into runs of consecutive identical verdicts
-            runs = []
-            start_idx = 0
-            for i in range(1, len(V_arr)):
-                if V_arr[i] != V_arr[i - 1]:
-                    runs.append((start_idx, i - 1, V_arr[i - 1]))
-                    start_idx = i
-            runs.append((start_idx, len(V_arr) - 1, V_arr[-1]))
-
-            # Plot each run as a separate 3D line with its mapped color
-            for run_ix, run_fx, verdict in runs:
-                Mi = M_arr[run_ix : run_fx + 1]
-                Fi = F_arr[run_ix : run_fx + 1]
-                Si = S_arr[run_ix : run_fx + 1]
-                color = verdict_to_color(verdict)
-
-                fig.add_trace(
-                    go.Scatter3d(
-                        x=np.log10(Mi),
-                        y=np.log10(Fi),
-                        z=np.log10(Si),
-                        mode='lines',
-                        line=dict(color=color, width=4),
-                        name=f"Fixed Curve ({verdict})",
-                        legendgroup='fixed_curve',
-                        showlegend=(block_idx == 0 and run_ix == 0)
-                    )
-                )
-
-        if plot:
-            fig.update_layout(
-                legend=dict(
-                    x=0.85, y=0.90,
-                    xanchor="left", yanchor="top",
-                ),
-                margin=dict(r=40)
-            )
-            fig.update_layout(
-                scene=dict(
-                    xaxis=dict(
-                        title="log(Macrophages)",
-                        range=[7.0, 0],
-                        zeroline=False,
-                        zerolinewidth=2,
-                        zerolinecolor="black",
-                        autorange=False
-                    ),
-                    yaxis=dict(
-                        title="log(Myofibroblasts)",
-                        range=[0, 6.0],
-                        zeroline=False,
-                        zerolinewidth=2,
-                        zerolinecolor="black",
-                        autorange=False
-                    ),
-                    zaxis=dict(
-                        title="log(Senescent cells)",
-                        range=[0, 8.0],
-                        zeroline=False,
-                        zerolinewidth=2,
-                        zerolinecolor="black",
-                        autorange=False
-                    ),
-                    aspectmode="cube"
-                )
-            )
-            fig.show()
-
-        return fig
 
 
     def nullclines_3D_plotly(self, start, stop, steps,return_fig=False,show=False):
@@ -1857,8 +1684,8 @@ class fibrosis_senescence_model:
         scene=dict(
             xaxis=dict(
                 title="Macrophages (cells/ml)",
-                title_font=dict(size=18),    # axis title font size
-                tickfont=dict(size=12)      # tick label font size
+                title_font=dict(size=18),  
+                tickfont=dict(size=12)      
             ),
             yaxis=dict(
                 title="Myofibroblasts (cells/ml)",
@@ -2040,13 +1867,12 @@ class fibrosis_senescence_model:
         )
 
         # --- S-nullcline (dS/dt=0) as a full ribbon in F and S ---
-        # build a full (S,F) grid
+  
         S_grid, F_grid = np.meshgrid(S_vals, F_vals, indexing='ij')
 
         # compute M from the analytic S-nullcline M = h (q + S)/(r S)
         M_S_grid = (self.h * (self.q + S_grid)) / (self.r * S_grid)
 
-        # now plot it as a proper surface
         ax.plot_surface(
             np.log10(M_S_grid),
             np.log10(F_grid),
@@ -2054,7 +1880,6 @@ class fibrosis_senescence_model:
             color='lime', alpha=0.3
         )
 
-        # build a legend by proxy
         legend_handles = [
             Patch(color='magenta', alpha=0.4, label=r'$dM/dt=0$'),
             Patch(color='cyan',    alpha=0.4, label=r'$dF/dt=0$'),
@@ -2063,6 +1888,8 @@ class fibrosis_senescence_model:
         ax.legend(handles=legend_handles, loc='upper left')
 
         plt.show()
+
+
     def plot_separatrix_surface_3D(self,
                                 initial_guess=(5e3, 5e3, 1e4),
                                 t_end=100,
@@ -2092,7 +1919,7 @@ class fibrosis_senescence_model:
 
         order = np.argsort(reals)
         stable_idx = order[:2]
-        print(f"  → Stable directions: indices {stable_idx}, eigenvalues {reals[stable_idx]}")
+        print(f"Stable directions: indices {stable_idx}, eigenvalues {reals[stable_idx]}")
 
         v1 = np.real(vecs[:, stable_idx[0]])
         v2 = np.real(vecs[:, stable_idx[1]])
@@ -2112,7 +1939,7 @@ class fibrosis_senescence_model:
             for j in range(n_dirs):
                 ic = initials[i, j]
                 if np.any(ic <= 0) or np.any(np.isnan(ic)):
-                    print(f"    ⚠ Skipping [{i},{j}] due to invalid init: {ic}")
+                    print(f"    Skipping [{i},{j}] due to invalid init: {ic}")
                     continue
                 try:
                     sol = solve_ivp(self.change_in_m_f_to_int,
@@ -2126,11 +1953,11 @@ class fibrosis_senescence_model:
                         Ff[i, j] = sol.y[1, -1]
                         Sf[i, j] = sol.y[2, -1]
                     else:
-                        print(f"    ❗ Integration failed at [{i},{j}]: {sol.message}")
+                        print(f"  !!! Integration failed at [{i},{j}]: {sol.message}")
                 except Exception as e:
-                    print(f"    ❌ Exception at [{i},{j}]: {e}")
+                    print(f"    !!! Exception at [{i},{j}]: {e}")
 
-        print("🧱 Step 5: Plotting surface in log10-space")
+        print(" Step 5: Plotting surface")
         fig = plt.figure(figsize=(9, 7))
         ax = fig.add_subplot(projection='3d')
         surf = ax.plot_surface(np.log10(Mf), np.log10(Ff), np.log10(Sf),
@@ -2179,7 +2006,7 @@ class fibrosis_senescence_model:
         F_vals = np.logspace(np.log10(F_range[0]), np.log10(F_range[1]), steps)
         S_vals = np.logspace(np.log10(S_range[0]), np.log10(S_range[1]), steps)
 
-        print(f"📦 Building {steps**3} grid points to evaluate...")
+        print(f" Building {steps**3} grid points to evaluate...")
 
         sep_points = []
 
@@ -2233,7 +2060,7 @@ class fibrosis_senescence_model:
             print("⚠ No separatrix points found.")
             return
 
-        print(f"🧠 Found {len(sep_points)} separatrix points.")
+        print(f"Found {len(sep_points)} separatrix points.")
 
         fig = plt.figure(figsize=(9, 7))
         ax = fig.add_subplot(projection='3d')
@@ -2282,7 +2109,7 @@ class fibrosis_senescence_model:
     def plot_separatrix_finite_difference_parallel(self, M_range, F_range, S_range,
                                                 resolution=20, t_end=100, threshold=1.0):
         """
-        Drop-in parallelized finite difference separatrix computation and plotting.
+        Drop-in parallelised finite difference separatrix computation and plotting.
 
         Parameters:
         - fsm: your fibrosis_senescence_model instance
@@ -2330,7 +2157,7 @@ class fibrosis_senescence_model:
         ax.set_xlabel("log10(Macrophages)")
         ax.set_ylabel("log10(Myofibroblasts)")
         ax.set_zlabel("log10(Senescent Cells)")
-        ax.set_title("Separatrix via Finite Differences (Parallelized)")
+        ax.set_title("Separatrix via Finite Differences (Parallelised)")
         ax.legend()
         plt.tight_layout()
         plt.show()
@@ -2370,7 +2197,7 @@ class fibrosis_senescence_model:
         ]
 
         # 2) classify in parallel, with a progress bar
-        print(f"🔎 Classifying {npts} points in parallel...")
+        print(f" Classifying {npts} points in parallel...")
         with ProcessPoolExecutor() as exe:
             # wrap the executor.map with tqdm so you get a live bar
             results = list(tqdm(
@@ -2408,9 +2235,9 @@ class fibrosis_senescence_model:
         ax.set_xlim(logM[0], logM[-1])
         ax.set_ylim(logF[0], logF[-1])
         ax.set_zlim(logS[0], logS[-1])
-        ax.set_xlabel("log₁₀(Macrophages)")
-        ax.set_ylabel("log₁₀(Myofibroblasts)")
-        ax.set_zlabel("log₁₀(Senescent Cells)")
+        ax.set_xlabel("log10(Macrophages)")
+        ax.set_ylabel("log10(Myofibroblasts)")
+        ax.set_zlabel("log10(Senescent Cells)")
         ax.set_title("Separatrix Surface (FD / Iso‐surface)")
         plt.tight_layout()
         plt.show()
@@ -2437,7 +2264,7 @@ class fibrosis_senescence_model:
         from concurrent.futures import ProcessPoolExecutor
         import tqdm
 
-        print(f"🌱 Sampling {n_samples} points in (M,F,S) space...")
+        print(f"Sampling {n_samples} points in (M,F,S) space...")
         args = [(self, M, F, S, (0, t_end), threshold) for M, F, S in initial_conditions]
 
         with ProcessPoolExecutor() as pool:
@@ -2456,7 +2283,7 @@ class fibrosis_senescence_model:
 
         # Save
         np.savez(save_file, points=points, labels=labels)
-        print(f"💾 Saved {len(points)} classified samples to {save_file}")
+        print(f"Saved {len(points)} classified samples to {save_file}")
 
         return points, labels
 
@@ -2506,7 +2333,7 @@ class fibrosis_senescence_model:
         from scipy.ndimage import gaussian_filter
 
         # Smooth the interpolated 3D data
-        smoothed_vals = gaussian_filter(grid_vals, sigma=sigma)  # adjust sigma as needed
+        smoothed_vals = gaussian_filter(grid_vals, sigma=sigma)
 
         print("📐 Extracting isosurface...")
         verts, faces, _, _ = measure.marching_cubes(
@@ -2517,7 +2344,7 @@ class fibrosis_senescence_model:
 
         verts += np.array([xi[0], yi[0], zi[0]])
 
-        print("🎨 Rendering Plotly surface...")
+        print("Rendering Plotly surface...")
         i, j, k = faces.T
 
         fig = go.Figure(data=[
